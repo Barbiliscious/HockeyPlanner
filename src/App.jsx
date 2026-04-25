@@ -1,84 +1,10 @@
 import React, { useMemo, useState } from "react";
+import { SLOT_META, FORMATIONS, FORMATION_NAMES, defaultLayouts, defaultPitch } from "./data/positionModel";
+import { PREF_LEVELS, scoreWeight, prefMeta } from "./data/preferenceModel";
+import { pk, parseImportText, encodeState, decodeState, exportPreferencesCsv, exportMatchdaySummary } from "./utils/importExport";
+import { getLineupSummary } from "./utils/lineupUtils";
 
 const MAX_PLAYERS = 16;
-
-const SLOT_META = [
-  { code: "GK", name: "Goalkeeper", group: "Defence" },
-  { code: "RB", name: "Right Back", group: "Defence" },
-  { code: "LB", name: "Left Back", group: "Defence" },
-  { code: "RH", name: "Right Half", group: "Midfield" },
-  { code: "CH", name: "Centre Half", group: "Midfield" },
-  { code: "LH", name: "Left Half", group: "Midfield" },
-  { code: "RI", name: "Right Inner", group: "Attack" },
-  { code: "LI", name: "Left Inner", group: "Attack" },
-  { code: "RW", name: "Right Wing", group: "Attack" },
-  { code: "CF", name: "Centre Forward", group: "Attack" },
-  { code: "LW", name: "Left Wing", group: "Attack" },
-];
-
-const FORMATIONS = {
-  "2-3-2-3 (Default)": [
-    { displayCode: "GK", displayName: "Goalkeeper", internalCode: "GK", x: 50, y: 150 },
-    { displayCode: "RB", displayName: "Right Back", internalCode: "RB", x: 62.5, y: 122 },
-    { displayCode: "LB", displayName: "Left Back", internalCode: "LB", x: 37.5, y: 122 },
-    { displayCode: "RH", displayName: "Right Half", internalCode: "RH", x: 78, y: 102 },
-    { displayCode: "CH", displayName: "Centre Half", internalCode: "CH", x: 50, y: 102 },
-    { displayCode: "LH", displayName: "Left Half", internalCode: "LH", x: 22, y: 102 },
-    { displayCode: "RI", displayName: "Right Inner", internalCode: "RI", x: 62.5, y: 74 },
-    { displayCode: "LI", displayName: "Left Inner", internalCode: "LI", x: 37.5, y: 74 },
-    { displayCode: "RW", displayName: "Right Wing", internalCode: "RW", x: 82, y: 50 },
-    { displayCode: "CF", displayName: "Centre Forward", internalCode: "CF", x: 50, y: 50 },
-    { displayCode: "LW", displayName: "Left Wing", internalCode: "LW", x: 18, y: 50 },
-  ],
-  "4-3-3 (Attack)": [
-    { displayCode: "GK", displayName: "Goalkeeper", internalCode: "GK", x: 50, y: 145 },
-    { displayCode: "RB", displayName: "Right Back", internalCode: "RB", x: 73, y: 120 },
-    { displayCode: "CB-L", displayName: "Centre Back Left", internalCode: "LB", x: 42, y: 118 },
-    { displayCode: "CB-R", displayName: "Centre Back Right", internalCode: "RH", x: 58, y: 118 },
-    { displayCode: "LB", displayName: "Left Back", internalCode: "LH", x: 27, y: 120 },
-    { displayCode: "RM", displayName: "Right Midfield", internalCode: "RW", x: 71, y: 85 },
-    { displayCode: "CM", displayName: "Centre Midfield", internalCode: "CH", x: 50, y: 82 },
-    { displayCode: "LM", displayName: "Left Midfield", internalCode: "LW", x: 29, y: 85 },
-    { displayCode: "RW", displayName: "Right Wing", internalCode: "RI", x: 76, y: 32 },
-    { displayCode: "CF", displayName: "Centre Forward", internalCode: "CF", x: 50, y: 28 },
-    { displayCode: "LW", displayName: "Left Wing", internalCode: "LI", x: 24, y: 32 },
-  ],
-  "4-4-2 (Classic)": [
-    { displayCode: "GK", displayName: "Goalkeeper", internalCode: "GK", x: 50, y: 145 },
-    { displayCode: "RB", displayName: "Right Back", internalCode: "RB", x: 73, y: 120 },
-    { displayCode: "CB-L", displayName: "Centre Back Left", internalCode: "LB", x: 42, y: 118 },
-    { displayCode: "CB-R", displayName: "Centre Back Right", internalCode: "CH", x: 58, y: 118 },
-    { displayCode: "LB", displayName: "Left Back", internalCode: "LH", x: 27, y: 120 },
-    { displayCode: "RM", displayName: "Right Midfield", internalCode: "RH", x: 75, y: 82 },
-    { displayCode: "CM-R", displayName: "Centre Midfield Right", internalCode: "RI", x: 58, y: 82 },
-    { displayCode: "CM-L", displayName: "Centre Midfield Left", internalCode: "LI", x: 42, y: 82 },
-    { displayCode: "LM", displayName: "Left Midfield", internalCode: "LW", x: 25, y: 82 },
-    { displayCode: "ST-R", displayName: "Striker Right", internalCode: "RW", x: 60, y: 34 },
-    { displayCode: "ST-L", displayName: "Striker Left", internalCode: "CF", x: 40, y: 34 },
-  ],
-  "3-4-3 (Wide)": [
-    { displayCode: "GK", displayName: "Goalkeeper", internalCode: "GK", x: 50, y: 145 },
-    { displayCode: "CB-R", displayName: "Centre Back Right", internalCode: "RB", x: 66, y: 118 },
-    { displayCode: "CB-C", displayName: "Centre Back Centre", internalCode: "CH", x: 50, y: 122 },
-    { displayCode: "CB-L", displayName: "Centre Back Left", internalCode: "LB", x: 34, y: 118 },
-    { displayCode: "RM", displayName: "Right Midfield", internalCode: "RH", x: 76, y: 82 },
-    { displayCode: "CM-R", displayName: "Centre Midfield Right", internalCode: "RI", x: 58, y: 82 },
-    { displayCode: "CM-L", displayName: "Centre Midfield Left", internalCode: "LI", x: 42, y: 82 },
-    { displayCode: "LM", displayName: "Left Midfield", internalCode: "LH", x: 24, y: 82 },
-    { displayCode: "RW", displayName: "Right Wing", internalCode: "RW", x: 76, y: 30 },
-    { displayCode: "CF", displayName: "Centre Forward", internalCode: "CF", x: 50, y: 28 },
-    { displayCode: "LW", displayName: "Left Wing", internalCode: "LW", x: 24, y: 30 },
-  ],
-};
-
-const FORMATION_NAMES = Object.keys(FORMATIONS);
-
-const FACE_LEVELS = [
-  { value: 3, emoji: "🤩", short: "Best", label: "Best fit", color: "#15803d", bg: "#dcfce7", border: "#86efac" },
-  { value: 2, emoji: "🙂", short: "Good", label: "Good fit", color: "#3f8f52", bg: "#ecfdf5", border: "#bbf7d0" },
-  { value: 1, emoji: "😐", short: "Emergency", label: "Emergency only", color: "#b45309", bg: "#ffedd5", border: "#fdba74" },
-  { value: 0, emoji: "☹️", short: "Avoid", label: "Do not use", color: "#b91c1c", bg: "#fee2e2", border: "#fca5a5" },
-];
 
 const THEMES = {
   light: {
@@ -106,141 +32,6 @@ const THEMES = {
     fieldBg: "#1e293b",
   },
 };
-
-const scoreWeight = { 3: 100, 2: 55, 1: 8, 0: -1000 };
-
-function clampName(n) {
-  return n.trim().replace(/\s+/g, " ");
-}
-
-function nl(v) {
-  return String(v || "")
-    .toLowerCase()
-    .replace(/[’']/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function pk(playerId, slotCode) {
-  return `${playerId}__${slotCode}`;
-}
-
-function defaultPitch(formation) {
-  const positions = {};
-  FORMATIONS[formation].forEach((s) => {
-    positions[s.internalCode] = { x: s.x, y: s.y };
-  });
-  return positions;
-}
-
-function defaultLayouts() {
-  return Object.fromEntries(FORMATION_NAMES.map((name) => [name, defaultPitch(name)]));
-}
-
-function faceMeta(value) {
-  return FACE_LEVELS.find((f) => f.value === value) || FACE_LEVELS[1];
-}
-
-function parseImportText(text) {
-  const raw = text.trim();
-  if (!raw) return { playersToAdd: [], prefUpdates: [] };
-
-  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const playersToAdd = [];
-  const prefUpdates = [];
-
-  const slotMap = {};
-  SLOT_META.forEach((s) => {
-    slotMap[nl(s.code)] = s.code;
-    slotMap[nl(s.name)] = s.code;
-  });
-
-  const addPlayerIfMissing = (name) => {
-    const clean = clampName(name);
-    if (!clean) return null;
-    if (!playersToAdd.some((p) => nl(p.name) === nl(clean))) {
-      playersToAdd.push({ name: clean });
-    }
-    return clean;
-  };
-
-  const parsePositionsList = (value) =>
-    String(value || "")
-      .split(/[|;/]+/)
-      .map((x) => slotMap[nl(x)])
-      .filter(Boolean);
-
-  const first = lines[0];
-  if (first.includes(",") && /name/i.test(first)) {
-    const headers = first.split(",").map((h) => nl(h));
-    const idx = {
-      name: headers.findIndex((h) => h === "name"),
-      best: headers.findIndex((h) => h === "best"),
-      good: headers.findIndex((h) => h === "good"),
-      emergency: headers.findIndex((h) => h === "emergency"),
-      avoid: headers.findIndex((h) => h === "avoid"),
-    };
-
-    lines.slice(1).forEach((line) => {
-      const cells = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-      const name = addPlayerIfMissing(cells[idx.name] || "");
-      if (!name) return;
-      [
-        { level: 3, key: idx.best },
-        { level: 2, key: idx.good },
-        { level: 1, key: idx.emergency },
-        { level: 0, key: idx.avoid },
-      ].forEach(({ level, key }) => {
-        parsePositionsList(cells[key]).forEach((slotCode) => {
-          prefUpdates.push({ name, slotCode, value: level });
-        });
-      });
-    });
-
-    return { playersToAdd, prefUpdates };
-  }
-
-  lines.forEach((line) => {
-    if (line.includes(",")) {
-      const [namePart, ...rest] = line.split(",");
-      const name = addPlayerIfMissing(namePart);
-      if (!name) return;
-      const roles = rest.map((r) => slotMap[nl(r)]).filter(Boolean);
-      roles.forEach((slotCode, idx) => {
-        prefUpdates.push({ name, slotCode, value: idx === 0 ? 3 : 2 });
-      });
-    } else {
-      addPlayerIfMissing(line);
-    }
-  });
-
-  return { playersToAdd, prefUpdates };
-}
-
-function encodeState(state) {
-  try {
-    const jsonString = JSON.stringify(state);
-    const bytes = new TextEncoder().encode(jsonString);
-    const binString = Array.from(bytes, (byte) =>
-      String.fromCodePoint(byte)
-    ).join("");
-    return btoa(binString);
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-}
-
-function decodeState(code) {
-  try {
-    const binString = atob(code.trim());
-    const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes));
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-}
 
 export default function FieldHockeyPositionPlannerV2() {
   const [themeMode, setThemeMode] = useState("light");
@@ -288,43 +79,17 @@ export default function FieldHockeyPositionPlannerV2() {
     return map;
   }, [activePlayer, preferences]);
 
-  const lineupSummary = useMemo(() => {
-    let best = 0;
-    let good = 0;
-    let emergency = 0;
-    let avoid = 0;
-    const warnings = [];
-
-    SLOT_META.forEach((slot) => {
-      const pid = lineup[slot.code];
-      if (!pid) return;
-      const sc = prefScore(pid, slot.code);
-      if (sc === 3) best += 1;
-      else if (sc === 2) good += 1;
-      else if (sc === 1) emergency += 1;
-      else avoid += 1;
-    });
-
-    if (emergency > 0) warnings.push(`${emergency} player${emergency > 1 ? "s" : ""} in emergency roles.`);
-    if (avoid > 0) warnings.push(`${avoid} player${avoid > 1 ? "s" : ""} in avoid roles.`);
-
-    SLOT_META.forEach((slot) => {
-      const capable = players.filter((p) => prefScore(p.id, slot.code) >= 2).length;
-      if (capable === 0) warnings.push(`No natural ${slot.name}.`);
-    });
-
-    return { best, good, emergency, avoid, warnings: [...new Set(warnings)].slice(0, 4) };
-  }, [lineup, players, preferences]);
+  const lineupSummary = useMemo(() => getLineupSummary(lineup, players, prefScore), [lineup, players, preferences]);
 
   const setPref = (playerId, slotCode, value) => {
     setPreferences((prev) => ({ ...prev, [pk(playerId, slotCode)]: value }));
   };
 
   const addPlayer = () => {
-    const name = clampName(newPlayer);
+    const name = newPlayer.trim().replace(/\s+/g, " ");
     if (!name) return;
     if (players.length >= MAX_PLAYERS) return setMessage(`Maximum of ${MAX_PLAYERS} players reached.`);
-    if (players.some((p) => nl(p.name) === nl(name))) return setMessage("That player is already in the squad.");
+    if (players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return setMessage("That player is already in the squad.");
 
     const player = { id: nextId, name };
     setPlayers((prev) => [...prev, player]);
@@ -335,25 +100,27 @@ export default function FieldHockeyPositionPlannerV2() {
   };
 
   const applyImport = () => {
-    const { playersToAdd, prefUpdates } = parseImportText(bulkImport);
+    const { playersToAdd, prefUpdates } = parseImportText(bulkImport, players);
     if (!playersToAdd.length && !prefUpdates.length) return;
 
-    const existingByName = new Map(players.map((p) => [nl(p.name), p.id]));
+    const existingByName = new Map(players.map((p) => [p.name.toLowerCase().replace(/[^a-z0-9]+/g, ""), p.id]));
     let created = [];
     let next = nextId;
 
     playersToAdd.forEach((p) => {
-      if (existingByName.has(nl(p.name))) return;
+      const cleanName = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      if (existingByName.has(cleanName)) return;
       if (players.length + created.length >= MAX_PLAYERS) return;
       created.push({ id: next, name: p.name });
-      existingByName.set(nl(p.name), next);
+      existingByName.set(cleanName, next);
       next += 1;
     });
 
     const mergedPlayers = [...players, ...created];
     const nextPrefs = { ...preferences };
     prefUpdates.forEach((u) => {
-      const playerId = existingByName.get(nl(u.name));
+      const cleanName = u.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const playerId = existingByName.get(cleanName);
       if (!playerId) return;
       nextPrefs[pk(playerId, u.slotCode)] = u.value;
     });
@@ -542,32 +309,6 @@ export default function FieldHockeyPositionPlannerV2() {
     setSelected(null);
   };
 
-  const exportPreferencesCsv = () => {
-    const rows = ["name,best,good,emergency,avoid"];
-    players.forEach((player) => {
-      const values = { 3: [], 2: [], 1: [], 0: [] };
-      SLOT_META.forEach((slot) => values[prefScore(player.id, slot.code)].push(slot.code));
-      rows.push([
-        player.name,
-        `"${values[3].join("|")}"`,
-        `"${values[2].join("|")}"`,
-        `"${values[1].join("|")}"`,
-        `"${values[0].join("|")}"`,
-      ].join(","));
-    });
-    return rows.join("\n");
-  };
-
-  const exportMatchdaySummary = () => {
-    return fSlots
-      .map((spot) => {
-        const pid = lineup[spot.internalCode];
-        const player = byId(pid);
-        return `${spot.displayCode} - ${spot.displayName}: ${player ? player.name : "Empty"}`;
-      })
-      .join("\n");
-  };
-
   const createShare = async () => {
     const state = { formation, players, nextId, preferences, lineup, lockedSlots, pitchLayouts };
     const code = encodeState(state);
@@ -740,16 +481,16 @@ export default function FieldHockeyPositionPlannerV2() {
               </div>
 
               <div style={{ color: t.muted, fontSize: 13, marginBottom: 8 }}>
-                Paste names, lines like <b>Name, GK, CH, RB</b>, or full CSV:
+                Paste names, lines like <b>Name, GK, HBC, FBR</b>, or full CSV:
                 <br />
-                <span style={{ fontFamily: "monospace" }}>name,best,good,emergency,avoid</span>
+                <span style={{ fontFamily: "monospace" }}>Player,GK,FB-L,FB-R,HB-L,HB-C,HB-R,IN-L,IN-R,FWD-L,FWD-C,FWD-R</span>
               </div>
 
               <textarea
                 style={{ ...input, minHeight: 180, resize: "vertical" }}
                 value={bulkImport}
                 onChange={(e) => setBulkImport(e.target.value)}
-                placeholder={`Sam Taylor\nJordan Smith, CF, RW, RI\nAlex Brown, CH, RH\n\nname,best,good,emergency,avoid\nCasey White,"LW|RW","CF","RI","GK"`}
+                placeholder={`Sam Taylor\nJordan Smith, FWDC, FWDR, INR\nAlex Brown, HBC, HBR\n\nPlayer,GK,FB-L,FB-R\nCasey White,Uncomfortable,Experienced,Capable`}
               />
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
@@ -769,6 +510,8 @@ export default function FieldHockeyPositionPlannerV2() {
                 {players.map((player) => {
                   const best = SLOT_META.filter((slot) => prefScore(player.id, slot.code) === 3).map((slot) => slot.code);
                   const good = SLOT_META.filter((slot) => prefScore(player.id, slot.code) === 2).map((slot) => slot.code);
+                  const face3 = prefMeta(3);
+                  const face2 = prefMeta(2);
                   return (
                     <div
                       key={player.id}
@@ -787,8 +530,8 @@ export default function FieldHockeyPositionPlannerV2() {
                         <button style={{ ...secondaryBtn, padding: "6px 10px" }} onClick={() => removePlayer(player.id)}>Remove</button>
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={pill(faceMeta(3))}>{faceMeta(3).emoji} {best.slice(0, 3).join(" ") || "None set"}</div>
-                        <div style={pill(faceMeta(2))}>{faceMeta(2).emoji} {good.slice(0, 3).join(" ") || "None set"}</div>
+                        <div style={pill(face3)}><face3.Icon size={14} /> {best.slice(0, 3).join(" ") || "None set"}</div>
+                        <div style={pill(face2)}><face2.Icon size={14} /> {good.slice(0, 3).join(" ") || "None set"}</div>
                       </div>
                       <button style={primaryBtn} onClick={() => { setActivePlayerId(player.id); setTab("Roles"); }}>
                         Edit roles
@@ -838,12 +581,12 @@ export default function FieldHockeyPositionPlannerV2() {
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 700 }}>Roles for {activePlayer?.name || "—"}</div>
                     <div style={{ color: t.muted, fontSize: 13, marginTop: 4 }}>
-                      Tap a face, then tap positions for fast assignment.
+                      Tap a level, then tap positions for fast assignment.
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {FACE_LEVELS.map((face) => (
-                      <div key={face.value} style={pill(face)}>{face.emoji} {face.short}</div>
+                    {PREF_LEVELS.map((face) => (
+                      <div key={face.value} style={pill(face)}><face.Icon size={14} /> {face.short}</div>
                     ))}
                   </div>
                 </div>
@@ -852,9 +595,9 @@ export default function FieldHockeyPositionPlannerV2() {
                   <div style={{ color: t.muted, marginTop: 12 }}>Add a player to start setting roles.</div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 16 }}>
-                    {FACE_LEVELS.map((face) => (
+                    {PREF_LEVELS.map((face) => (
                       <div key={face.value} style={{ background: t.panelAlt, border: `1px solid ${t.border}`, borderRadius: 16, padding: 14 }}>
-                        <div style={{ ...pill(face), marginBottom: 10 }}>{face.emoji} {face.label}</div>
+                        <div style={{ ...pill(face), marginBottom: 10 }}><face.Icon size={14} /> {face.label}</div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                           {slotAssignmentsByFace[face.value].map((slot) => (
                             <button
@@ -889,13 +632,13 @@ export default function FieldHockeyPositionPlannerV2() {
                   <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Advanced role matrix</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
                     {SLOT_META.map((slot) => {
-                      const face = faceMeta(prefScore(activePlayer.id, slot.code));
+                      const face = prefMeta(prefScore(activePlayer.id, slot.code));
                       return (
                         <div key={slot.code} style={{ background: t.panelAlt, border: `1px solid ${t.border}`, borderRadius: 14, padding: 12 }}>
                           <div style={{ fontWeight: 700 }}>{slot.name}</div>
                           <div style={{ fontSize: 12, color: t.muted, marginTop: 4 }}>{slot.code} • {slot.group}</div>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-                            {FACE_LEVELS.map((opt) => (
+                            {PREF_LEVELS.map((opt) => (
                               <button
                                 key={opt.value}
                                 style={{
@@ -909,7 +652,7 @@ export default function FieldHockeyPositionPlannerV2() {
                                 }}
                                 onClick={() => setPref(activePlayer.id, slot.code, opt.value)}
                               >
-                                {opt.emoji}
+                                <opt.Icon size={14} />
                               </button>
                             ))}
                           </div>
@@ -958,13 +701,15 @@ export default function FieldHockeyPositionPlannerV2() {
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginTop: 14 }}>
                 {[
-                  { label: "Best", value: lineupSummary.best, face: faceMeta(3) },
-                  { label: "Good", value: lineupSummary.good, face: faceMeta(2) },
-                  { label: "Emergency", value: lineupSummary.emergency, face: faceMeta(1) },
-                  { label: "Avoid", value: lineupSummary.avoid, face: faceMeta(0) },
+                  { label: "Experienced", value: lineupSummary.experienced, face: prefMeta(3) },
+                  { label: "Capable", value: lineupSummary.capable, face: prefMeta(2) },
+                  { label: "Limited", value: lineupSummary.limited, face: prefMeta(1) },
+                  { label: "Uncomfortable", value: lineupSummary.uncomfortable, face: prefMeta(0) },
                 ].map((tile) => (
                   <div key={tile.label} style={{ background: tile.face.bg, border: `1px solid ${tile.face.border}`, borderRadius: 14, padding: 14 }}>
-                    <div style={{ color: tile.face.color, fontSize: 12, fontWeight: 700 }}>{tile.face.emoji} {tile.label}</div>
+                    <div style={{ color: tile.face.color, fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                      <tile.face.Icon size={14} /> {tile.label}
+                    </div>
                     <div style={{ fontSize: 28, fontWeight: 800 }}>{tile.value}</div>
                   </div>
                 ))}
@@ -1006,7 +751,7 @@ export default function FieldHockeyPositionPlannerV2() {
                       const pos = pitchPos[spot.internalCode] || { x: spot.x, y: spot.y };
                       const pid = lineup[spot.internalCode];
                       const player = byId(pid);
-                      const face = player ? faceMeta(prefScore(player.id, spot.internalCode)) : null;
+                      const face = player ? prefMeta(prefScore(player.id, spot.internalCode)) : null;
                       const selectedSlot = isSelected("slot", spot.internalCode);
                       const locked = isLocked(spot.internalCode);
                       return (
@@ -1025,7 +770,11 @@ export default function FieldHockeyPositionPlannerV2() {
                           />
                           <text x={pos.x} y={pos.y + 0.7} textAnchor="middle" fontSize="2" fontWeight="700" fill="#fff" pointerEvents="none">{spot.displayCode}</text>
                           <text x={pos.x} y={pos.y + 6.4} textAnchor="middle" fontSize={player ? "3.1" : "2.5"} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
-                          {face && <text x={pos.x} y={pos.y - 4.8} textAnchor="middle" fontSize="3" pointerEvents="none">{face.emoji}</text>}
+                          {face && <g transform={`translate(${pos.x - 1.5}, ${pos.y - 6.5})`} strokeWidth={0} fill={face.color}>
+                             <svg width="3" height="3" viewBox="0 0 24 24">
+                                <face.Icon size={24} color={face.color} strokeWidth={2.5} />
+                             </svg>
+                          </g>}
                         </g>
                       );
                     })}
@@ -1056,7 +805,7 @@ export default function FieldHockeyPositionPlannerV2() {
                     {fSlots.map((spot) => {
                       const pid = lineup[spot.internalCode];
                       const player = byId(pid);
-                      const face = player ? faceMeta(prefScore(player.id, spot.internalCode)) : null;
+                      const face = player ? prefMeta(prefScore(player.id, spot.internalCode)) : null;
                       const locked = isLocked(spot.internalCode);
                       return (
                         <div key={spot.displayCode + spot.internalCode} onClick={() => handleSelect("slot", spot.internalCode)} style={{ background: isSelected("slot", spot.internalCode) ? t.selection : t.panelAlt, border: `1px solid ${locked ? "#f59e0b" : isSelected("slot", spot.internalCode) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -1065,8 +814,8 @@ export default function FieldHockeyPositionPlannerV2() {
                             <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{player ? player.name : "— Empty —"}</div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ background: face ? face.bg : t.panel, color: face ? face.color : t.text, border: `1px solid ${face ? face.border : t.border}`, borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 700 }}>
-                              {face ? `${face.emoji} ${face.short}` : "Empty"}
+                            <div style={{ background: face ? face.bg : t.panel, color: face ? face.color : t.text, border: `1px solid ${face ? face.border : t.border}`, borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                              {face ? <><face.Icon size={14} /> {face.short}</> : "Empty"}
                             </div>
                             <button style={{ ...secondaryBtn, padding: "8px 10px", borderColor: locked ? "#f59e0b" : t.border }} onClick={(e) => { e.stopPropagation(); toggleLock(spot.internalCode); }}>
                               {locked ? "🔒" : "🔓"}
@@ -1087,8 +836,8 @@ export default function FieldHockeyPositionPlannerV2() {
             <div style={card}>
               <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Export tools</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <textarea readOnly value={exportPreferencesCsv()} style={{ ...input, minHeight: 180, fontFamily: "monospace", fontSize: 12 }} />
-                <textarea readOnly value={exportMatchdaySummary()} style={{ ...input, minHeight: 180, fontFamily: "monospace", fontSize: 12 }} />
+                <textarea readOnly value={exportPreferencesCsv(players, prefScore)} style={{ ...input, minHeight: 180, fontFamily: "monospace", fontSize: 12 }} />
+                <textarea readOnly value={exportMatchdaySummary(fSlots, lineup, byId)} style={{ ...input, minHeight: 180, fontFamily: "monospace", fontSize: 12 }} />
                 <button style={primaryBtn} onClick={createShare}>Generate share code</button>
                 {!!shareCode && <textarea readOnly value={shareCode} style={{ ...input, minHeight: 140, fontFamily: "monospace", fontSize: 11 }} onClick={(e) => e.target.select()} />}
               </div>
