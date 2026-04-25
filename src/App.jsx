@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef } from "react";
 import { SLOT_META, FORMATIONS, FORMATION_NAMES, defaultLayouts, defaultPitch } from "./data/positionModel";
 import { PREF_LEVELS, scoreWeight, prefMeta } from "./data/preferenceModel";
-import { pk, parseImportText, encodeState, decodeState, exportPreferencesCsv, exportMatchdaySummary } from "./utils/importExport";
+import { pk, parseSpreadsheetData, exportToExcel, encodeState, decodeState, exportMatchdaySummary } from "./utils/importExport";
 import { getLineupSummary } from "./utils/lineupUtils";
+import * as XLSX from 'xlsx';
 
 const MAX_PLAYERS = 16;
 
@@ -55,6 +56,8 @@ export default function FieldHockeyPositionPlannerV2() {
   const [dragStart, setDragStart] = useState(null);
   const [markerSize, setMarkerSize] = useState(3.2);
 
+  const fileInputRef = useRef(null);
+
   const t = THEMES[themeMode];
   const fSlots = FORMATIONS[formation];
   const pitchPos = pitchLayouts[formation];
@@ -99,9 +102,12 @@ export default function FieldHockeyPositionPlannerV2() {
     setMessage(`${name} added.`);
   };
 
-  const applyImport = () => {
-    const { playersToAdd, prefUpdates } = parseImportText(bulkImport, players);
-    if (!playersToAdd.length && !prefUpdates.length) return;
+  const applySpreadsheetData = (aoa) => {
+    const { playersToAdd, prefUpdates, stats } = parseSpreadsheetData(aoa, players);
+    
+    if (!playersToAdd.length && !prefUpdates.length) {
+      return setMessage("No valid data found to import.");
+    }
 
     const existingByName = new Map(players.map((p) => [p.name.toLowerCase().replace(/[^a-z0-9]+/g, ""), p.id]));
     let created = [];
@@ -128,9 +134,42 @@ export default function FieldHockeyPositionPlannerV2() {
     setPlayers(mergedPlayers);
     setNextId(next);
     setPreferences(nextPrefs);
-    setBulkImport("");
     setActivePlayerId((prev) => prev ?? mergedPlayers[0]?.id ?? null);
-    setMessage(`Imported ${created.length} player${created.length === 1 ? "" : "s"} and updated ${prefUpdates.length} role preference${prefUpdates.length === 1 ? "" : "s"}.`);
+    
+    let msg = `Import complete: ${stats.created} created, ${stats.matched} matched, ${stats.updated} preferences updated. Skipped ${stats.skipped} invalid/empty rows.`;
+    if (stats.errors.length) {
+      msg += ` Errors: ${stats.errors.join(" ")}`;
+    }
+    setMessage(msg);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        applySpreadsheetData(aoa);
+      } catch (err) {
+        setMessage("Error reading Excel file. Ensure it is a valid .xlsx file.");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = null; // reset
+  };
+
+  const handlePaste = () => {
+    if (!bulkImport.trim()) return;
+    const rows = bulkImport.trim().split(/\r?\n/);
+    // Tab delimited support
+    const aoa = rows.map(r => r.split('\t'));
+    applySpreadsheetData(aoa);
+    setBulkImport("");
   };
 
   const removePlayer = (id) => {
@@ -466,40 +505,59 @@ export default function FieldHockeyPositionPlannerV2() {
 
         {tab === "Squad" && (
           <div style={{ display: "grid", gridTemplateColumns: "minmax(340px, 0.9fr) minmax(0, 1.1fr)", gap: 16 }}>
-            <div style={card}>
-              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Build squad</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={card}>
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Build squad manually</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    style={input}
+                    value={newPlayer}
+                    onChange={(e) => setNewPlayer(e.target.value)}
+                    placeholder="Add player name"
+                    onKeyDown={(e) => e.key === "Enter" && addPlayer()}
+                  />
+                  <button style={primaryBtn} onClick={addPlayer}>Add</button>
+                </div>
+                <div style={{ marginTop: 12, color: t.muted, fontSize: 13 }}>
+                  {players.length}/{MAX_PLAYERS} players
+                </div>
+              </div>
 
-              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-                <input
-                  style={input}
-                  value={newPlayer}
-                  onChange={(e) => setNewPlayer(e.target.value)}
-                  placeholder="Add player name"
-                  onKeyDown={(e) => e.key === "Enter" && addPlayer()}
+              <div style={card}>
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Spreadsheet Workflow</div>
+                
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                  <button style={secondaryBtn} onClick={() => exportToExcel(players, "blank")}>Download Blank Template</button>
+                  <button style={secondaryBtn} onClick={() => exportToExcel(players, "current")}>Download Current Squad</button>
+                  <button style={primaryBtn} onClick={() => fileInputRef.current.click()}>Import Template</button>
+                  <input type="file" accept=".xlsx,.csv" style={{ display: "none" }} ref={fileInputRef} onChange={handleFileUpload} />
+                </div>
+
+                <div style={{ marginBottom: 16, background: t.panelAlt, padding: 12, borderRadius: 12, border: `1px solid ${t.border}` }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Spreadsheet Legend (0-3 values)</div>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    {PREF_LEVELS.map(l => (
+                      <div key={l.value} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontWeight: 800 }}>{l.value}</span> = {l.short}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Or Paste Table</div>
+                <div style={{ color: t.muted, fontSize: 13, marginBottom: 8 }}>
+                  Copy directly from Excel/Sheets and paste here. Include the header row.
+                </div>
+                <textarea
+                  style={{ ...input, minHeight: 120, resize: "vertical" }}
+                  value={bulkImport}
+                  onChange={(e) => setBulkImport(e.target.value)}
+                  placeholder={`Player\tGK\tFB-L\tFB-R\tHB-L\nSam\t0\t3\t2\t1`}
                 />
-                <button style={primaryBtn} onClick={addPlayer}>Add</button>
-              </div>
-
-              <div style={{ color: t.muted, fontSize: 13, marginBottom: 8 }}>
-                Paste names, lines like <b>Name, GK, HBC, FBR</b>, or full CSV:
-                <br />
-                <span style={{ fontFamily: "monospace" }}>Player,GK,FB-L,FB-R,HB-L,HB-C,HB-R,IN-L,IN-R,FWD-L,FWD-C,FWD-R</span>
-              </div>
-
-              <textarea
-                style={{ ...input, minHeight: 180, resize: "vertical" }}
-                value={bulkImport}
-                onChange={(e) => setBulkImport(e.target.value)}
-                placeholder={`Sam Taylor\nJordan Smith, FWDC, FWDR, INR\nAlex Brown, HBC, HBR\n\nPlayer,GK,FB-L,FB-R\nCasey White,Uncomfortable,Experienced,Capable`}
-              />
-
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                <button style={primaryBtn} onClick={applyImport}>Import / apply</button>
-                <button style={secondaryBtn} onClick={() => setBulkImport("")}>Clear</button>
-              </div>
-
-              <div style={{ marginTop: 12, color: t.muted, fontSize: 13 }}>
-                {players.length}/{MAX_PLAYERS} players
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                  <button style={primaryBtn} onClick={handlePaste}>Apply Pasted Data</button>
+                  <button style={secondaryBtn} onClick={() => setBulkImport("")}>Clear</button>
+                </div>
               </div>
             </div>
 
@@ -836,7 +894,6 @@ export default function FieldHockeyPositionPlannerV2() {
             <div style={card}>
               <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Export tools</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <textarea readOnly value={exportPreferencesCsv(players, prefScore)} style={{ ...input, minHeight: 180, fontFamily: "monospace", fontSize: 12 }} />
                 <textarea readOnly value={exportMatchdaySummary(fSlots, lineup, byId)} style={{ ...input, minHeight: 180, fontFamily: "monospace", fontSize: 12 }} />
                 <button style={primaryBtn} onClick={createShare}>Generate share code</button>
                 {!!shareCode && <textarea readOnly value={shareCode} style={{ ...input, minHeight: 140, fontFamily: "monospace", fontSize: 11 }} onClick={(e) => e.target.select()} />}

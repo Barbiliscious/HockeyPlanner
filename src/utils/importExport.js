@@ -1,4 +1,5 @@
 import { SLOT_META } from '../data/positionModel';
+import * as XLSX from 'xlsx';
 
 export function clampName(n) {
   return n.trim().replace(/\s+/g, " ");
@@ -16,13 +17,21 @@ export function pk(playerId, slotCode) {
   return `${playerId}__${slotCode}`;
 }
 
-export function parseImportText(text, players) {
-  const raw = text.trim();
-  if (!raw) return { playersToAdd: [], prefUpdates: [] };
+const parseLevel = (val) => {
+  const prefText = nl(val);
+  if (prefText === "experienced" || prefText === "3") return 3;
+  if (prefText === "capable" || prefText === "2") return 2;
+  if (prefText === "limited" || prefText === "1") return 1;
+  if (prefText === "uncomfortable" || prefText === "0") return 0;
+  return null;
+}
 
-  const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+export function parseSpreadsheetData(aoa, players) {
+  if (!aoa || aoa.length === 0) return { playersToAdd: [], prefUpdates: [], stats: { matched: 0, created: 0, updated: 0, skipped: 0, errors: [] } };
+
   const playersToAdd = [];
   const prefUpdates = [];
+  const stats = { matched: 0, created: 0, updated: 0, skipped: 0, errors: [] };
 
   const slotMap = {};
   SLOT_META.forEach((s) => {
@@ -34,97 +43,99 @@ export function parseImportText(text, players) {
   const addPlayerIfMissing = (name) => {
     const clean = clampName(name);
     if (!clean) return null;
-    if (!playersToAdd.some((p) => nl(p.name) === nl(clean)) && !players.some(p => nl(p.name) === nl(clean))) {
+    const exists = players.some(p => nl(p.name) === nl(clean)) || playersToAdd.some(p => nl(p.name) === nl(clean));
+    if (!exists) {
       playersToAdd.push({ name: clean });
+      stats.created++;
+    } else if (players.some(p => nl(p.name) === nl(clean))) {
+      stats.matched++;
     }
     return clean;
   };
 
-  const parsePositionsList = (value) =>
-    String(value || "")
-      .split(/[|;/]+/)
-      .map((x) => slotMap[nl(x)])
-      .filter(Boolean);
+  const headers = aoa[0].map(h => nl(h));
+  const idx = {
+    name: headers.findIndex((h) => h === "name" || h === "player"),
+  };
 
-  const first = lines[0];
-  if (first.includes(",") && /name|player/i.test(first)) {
-    if (/experienced|capable/i.test(first)) {
-      const headers = first.split(",").map((h) => nl(h));
-      const idx = {
-        name: headers.findIndex((h) => h === "name" || h === "player"),
-        experienced: headers.findIndex((h) => h === "experienced"),
-        capable: headers.findIndex((h) => h === "capable"),
-        limited: headers.findIndex((h) => h === "limited"),
-        uncomfortable: headers.findIndex((h) => h === "uncomfortable"),
-      };
-
-      lines.slice(1).forEach((line) => {
-        const cells = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-        const name = addPlayerIfMissing(cells[idx.name] || "");
-        if (!name) return;
-        [
-          { level: 3, key: idx.experienced },
-          { level: 2, key: idx.capable },
-          { level: 1, key: idx.limited },
-          { level: 0, key: idx.uncomfortable },
-        ].forEach(({ level, key }) => {
-          if (key === -1) return;
-          parsePositionsList(cells[key]).forEach((slotCode) => {
-            prefUpdates.push({ name, slotCode, value: level });
-          });
-        });
-      });
-    } else {
-      const headers = first.split(",").map((h) => nl(h));
-      const idx = {
-        name: headers.findIndex((h) => h === "name" || h === "player"),
-      };
-      
-      const colMap = {};
-      headers.forEach((h, i) => {
-         if (slotMap[h]) colMap[i] = slotMap[h];
-      });
-
-      lines.slice(1).forEach((line) => {
-        const cells = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-        const name = addPlayerIfMissing(cells[idx.name] || "");
-        if (!name) return;
-        
-        cells.forEach((val, i) => {
-           if (i === idx.name) return;
-           const slotCode = colMap[i];
-           if (slotCode) {
-              const prefText = nl(val);
-              let level = 1;
-              if (prefText === "experienced" || prefText === "3") level = 3;
-              else if (prefText === "capable" || prefText === "2") level = 2;
-              else if (prefText === "limited" || prefText === "1") level = 1;
-              else if (prefText === "uncomfortable" || prefText === "0") level = 0;
-              
-              if (val) prefUpdates.push({ name, slotCode, value: level });
-           }
-        });
-      });
-    }
-
-    return { playersToAdd, prefUpdates };
+  if (idx.name === -1) {
+    stats.errors.push("Could not find 'Player' or 'Name' column header.");
+    return { playersToAdd, prefUpdates, stats };
   }
 
-  lines.forEach((line) => {
-    if (line.includes(",")) {
-      const [namePart, ...rest] = line.split(",");
-      const name = addPlayerIfMissing(namePart);
-      if (!name) return;
-      const roles = rest.map((r) => slotMap[nl(r)]).filter(Boolean);
-      roles.forEach((slotCode, idx) => {
-        prefUpdates.push({ name, slotCode, value: idx === 0 ? 3 : 2 });
-      });
-    } else {
-      addPlayerIfMissing(line);
+  const colMap = {};
+  let unknownCols = 0;
+  headers.forEach((h, i) => {
+    if (i === idx.name) return;
+    if (slotMap[h]) {
+      colMap[i] = slotMap[h];
+    } else if (h) {
+      unknownCols++;
     }
   });
 
-  return { playersToAdd, prefUpdates };
+  if (unknownCols > 0) {
+    stats.errors.push(`Ignored ${unknownCols} unknown column(s).`);
+  }
+
+  aoa.slice(1).forEach((row) => {
+    if (!row || row.length === 0 || !row[idx.name] || String(row[idx.name]).includes("=")) {
+      stats.skipped++;
+      return;
+    }
+
+    const name = addPlayerIfMissing(String(row[idx.name]) || "");
+    if (!name) {
+      stats.skipped++;
+      return;
+    }
+    
+    row.forEach((val, i) => {
+      if (i === idx.name || val === undefined || val === null || val === "") return;
+      const slotCode = colMap[i];
+      if (slotCode) {
+        const level = parseLevel(val);
+        if (level !== null) {
+          prefUpdates.push({ name, slotCode, value: level });
+          stats.updated++;
+        }
+      }
+    });
+  });
+
+  return { playersToAdd, prefUpdates, stats };
+}
+
+export function exportToExcel(players, type) {
+  const headers = ["Player", ...SLOT_META.map(s => s.displayCode)];
+  const aoa = [headers];
+
+  if (type === "current") {
+    players.forEach((player) => {
+      const row = [player.name];
+      SLOT_META.forEach(() => {
+        row.push(1);
+      });
+      aoa.push(row);
+    });
+  } else {
+    aoa.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+    aoa.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+    aoa.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+  }
+
+  aoa.push([]);
+  aoa.push(["Legend:"]);
+  aoa.push(["3 = Experienced"]);
+  aoa.push(["2 = Capable"]);
+  aoa.push(["1 = Limited"]);
+  aoa.push(["0 = Uncomfortable"]);
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  XLSX.utils.book_append_sheet(wb, ws, "Squad");
+  const filename = type === "current" ? "Current_Squad_Template.xlsx" : "Blank_Template.xlsx";
+  XLSX.writeFile(wb, filename);
 }
 
 export function encodeState(state) {
@@ -148,25 +159,6 @@ export function decodeState(code) {
     console.error(e);
     return null;
   }
-}
-
-export function exportPreferencesCsv(players, prefScore) {
-  const headers = ["Player", ...SLOT_META.map(s => s.displayCode)];
-  const rows = [headers.join(",")];
-  
-  players.forEach((player) => {
-    const row = [player.name];
-    SLOT_META.forEach((slot) => {
-      const score = prefScore(player.id, slot.code);
-      let text = "Limited";
-      if (score === 3) text = "Experienced";
-      else if (score === 2) text = "Capable";
-      else if (score === 0) text = "Uncomfortable";
-      row.push(text);
-    });
-    rows.push(row.join(","));
-  });
-  return rows.join("\n");
 }
 
 export function exportMatchdaySummary(fSlots, lineup, byId) {
