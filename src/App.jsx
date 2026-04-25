@@ -762,7 +762,7 @@ export default function FieldHockeyPositionPlannerV2() {
         </div>
 
         {tab === "Squad" && (
-          <div onClick={() => setActivePlayerId(null)} style={{ display: "grid", gridTemplateColumns: "minmax(340px, 0.9fr) minmax(0, 1.1fr)", gap: 16 }}>
+          <div onClick={() => setActivePlayerId(null)} style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(340px, 0.9fr) minmax(0, 1.1fr)", gap: 16 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div style={card} onClick={(e) => e.stopPropagation()}>
                 <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Build squad manually</div>
@@ -898,7 +898,7 @@ export default function FieldHockeyPositionPlannerV2() {
         )}
 
         {tab === "Roles" && (
-          <div style={{ display: "grid", gridTemplateColumns: "320px minmax(0, 1fr)", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "320px minmax(0, 1fr)", gap: 16 }}>
             <div style={card}>
               <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Players</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 70 * 8, overflowY: "auto" }}>
