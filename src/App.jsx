@@ -35,7 +35,7 @@ const THEMES = {
 };
 
 export default function FieldHockeyPositionPlannerV2() {
-  const [themeMode, setThemeMode] = useState("light");
+  const [themeMode, setThemeMode] = useState("dark");
   const [tab, setTab] = useState("Squad");
   const [formation, setFormation] = useState(FORMATION_NAMES[0]);
   const [players, setPlayers] = useState([]);
@@ -450,9 +450,9 @@ export default function FieldHockeyPositionPlannerV2() {
         <div style={card}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <div>
-              <div style={{ fontSize: 28, fontWeight: 800 }}>Field Hockey Position Planner V2</div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>Hockey Position Planner V2</div>
               <div style={{ color: t.muted, fontSize: 14, marginTop: 4 }}>
-                Faster squad flow · Face-based roles · Smarter import/export · Better lineup UX
+                Smart squad planning for field hockey coaches.
               </div>
             </div>
             <button style={secondaryBtn} onClick={() => setThemeMode(themeMode === "light" ? "dark" : "light")}>
