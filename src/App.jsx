@@ -89,6 +89,12 @@ export default function FieldHockeyPositionPlannerV2() {
   };
 
   const prefIconProps = { size: 18, strokeWidth: 3, fill: "currentColor" };
+  const prefSymbolMeta = (value) => {
+    if (value === 3) return { symbol: "⭐", color: "#166534" };
+    if (value === 2) return { symbol: "●", color: "#1E40AF" };
+    if (value === 1) return { symbol: "▲", color: "#B45309" };
+    return { symbol: "✕", color: "#9F1239" };
+  };
 
   const slotAssignmentsByFace = useMemo(() => {
     if (!activePlayer) return { 3: [], 2: [], 1: [], 0: [] };
@@ -637,7 +643,7 @@ export default function FieldHockeyPositionPlannerV2() {
             <div style={{ color: rt.muted, fontSize: 14, fontWeight: 700 }}>Formation: {formation}</div>
           </header>
 
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.15fr) minmax(300px, 0.85fr)", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1.15fr) minmax(300px, 0.85fr)", gap: 16 }}>
             <div style={readOnlyCard}>
               <svg viewBox="0 0 100 170" style={{ width: "100%", display: "block", aspectRatio: "1 / 1.7", maxWidth: 520, margin: "0 auto" }}>
                 <rect x="0" y="0" width="100" height="170" fill="#1A56DB" />
@@ -1179,7 +1185,7 @@ export default function FieldHockeyPositionPlannerV2() {
                     {fSlots.map((spot) => {
                       const pid = lineup[spot.internalCode];
                       const player = byId(pid);
-                      const face = player ? prefMeta(prefScore(player.id, spot.internalCode)) : null;
+                      const symbol = player ? prefSymbolMeta(prefScore(player.id, spot.internalCode)) : null;
                       const locked = isLocked(spot.internalCode);
                       return (
                         <div key={spot.displayCode + spot.internalCode} onClick={() => handleSelect("slot", spot.internalCode)} style={{ background: isSelected("slot", spot.internalCode) ? t.selection : t.panelAlt, border: `1px solid ${locked ? "#EAB308" : isSelected("slot", spot.internalCode) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
@@ -1188,9 +1194,11 @@ export default function FieldHockeyPositionPlannerV2() {
                             <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{player ? player.name : "— Empty —"}</div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ background: face ? face.bg : t.panel, color: face ? face.color : t.text, border: `1px solid ${face ? face.border : t.border}`, borderRadius: 999, padding: "7px 10px", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
-                              {face ? <><face.Icon {...prefIconProps} /> {face.short}</> : "Empty"}
-                            </div>
+                            {symbol && (
+                              <span style={{ color: symbol.color, fontSize: 20, fontWeight: 900, lineHeight: 1 }} aria-label="Preference">
+                                {symbol.symbol}
+                              </span>
+                            )}
                             <button style={{ ...secondaryBtn, padding: "8px 10px", borderColor: locked ? "#EAB308" : t.border }} onClick={(e) => { e.stopPropagation(); toggleLock(spot.internalCode); }}>
                               {locked ? "🔒" : "🔓"}
                             </button>
@@ -1205,11 +1213,28 @@ export default function FieldHockeyPositionPlannerV2() {
                   <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Substitutes</div>
                   <div style={{ display: "grid", gap: 8 }}>
                     {!benchPlayers.length && <div style={{ color: t.muted }}>No bench players.</div>}
-                    {benchPlayers.map((player) => (
-                      <div key={player.id} onClick={() => handleSelect("bench", player.id)} style={{ background: isSelected("bench", player.id) ? t.selection : t.panelAlt, border: `1px solid ${isSelected("bench", player.id) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", fontWeight: 700 }}>
-                        {player.name}
-                      </div>
-                    ))}
+                    {benchPlayers.map((player) => {
+                      const strongPositions = SLOT_META
+                        .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
+                        .filter(({ pref }) => pref === 3 || pref === 2);
+                      return (
+                        <div key={player.id} onClick={() => handleSelect("bench", player.id)} style={{ background: isSelected("bench", player.id) ? t.selection : t.panelAlt, border: `1px solid ${isSelected("bench", player.id) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", fontWeight: 700 }}>
+                          <div>{player.name}</div>
+                          {!!strongPositions.length && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                              {strongPositions.map(({ code, pref }) => {
+                                const face = prefMeta(pref);
+                                return (
+                                  <span key={`${player.id}-${code}`} style={{ background: face.bg, color: face.color, border: `1px solid ${face.border}`, borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+                                    {code}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
