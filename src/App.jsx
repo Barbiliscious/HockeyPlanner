@@ -48,7 +48,6 @@ export default function FieldHockeyPositionPlannerV2() {
   const [lockedSlots, setLockedSlots] = useState({});
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState("");
-  const [advancedMode, setAdvancedMode] = useState(false);
   const [shareCode, setShareCode] = useState("");
   const [loadInput, setLoadInput] = useState("");
   const [pitchLayouts, setPitchLayouts] = useState(defaultLayouts());
@@ -635,12 +634,6 @@ export default function FieldHockeyPositionPlannerV2() {
                   </div>
                 ))}
               </div>
-
-              <div style={{ marginTop: 14 }}>
-                <button style={secondaryBtn} onClick={() => setAdvancedMode((v) => !v)}>
-                  {advancedMode ? "Hide advanced matrix" : "Show advanced matrix"}
-                </button>
-              </div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -648,9 +641,6 @@ export default function FieldHockeyPositionPlannerV2() {
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                   <div>
                     <div style={{ fontSize: 18, fontWeight: 700 }}>Roles for {activePlayer?.name || "—"}</div>
-                    <div style={{ color: t.muted, fontSize: 13, marginTop: 4 }}>
-                      Tap a level, then tap positions for fast assignment.
-                    </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {PREF_LEVELS.map((face) => (
@@ -661,43 +651,12 @@ export default function FieldHockeyPositionPlannerV2() {
 
                 {!activePlayer ? (
                   <div style={{ color: t.muted, marginTop: 12 }}>Add a player to start setting roles.</div>
-                ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 16 }}>
-                    {PREF_LEVELS.map((face) => (
-                      <div key={face.value} style={{ background: t.panelAlt, border: `1px solid ${t.border}`, borderRadius: 16, padding: 14 }}>
-                        <div style={{ ...pill(face), marginBottom: 10 }}><face.Icon size={14} /> {face.label}</div>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                          {slotAssignmentsByFace[face.value].map((slot) => (
-                            <button
-                              key={slot.code}
-                              style={{
-                                background: face.bg,
-                                color: face.color,
-                                border: `1px solid ${face.border}`,
-                                borderRadius: 999,
-                                padding: "8px 10px",
-                                fontWeight: 700,
-                                cursor: "pointer",
-                              }}
-                              onClick={() => {
-                                const next = face.value === 3 ? 2 : face.value + 1;
-                                setPref(activePlayer.id, slot.code, next > 3 ? 0 : next);
-                              }}
-                              title="Tap to cycle level"
-                            >
-                              {slot.code}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                ) : null}
               </div>
 
-              {advancedMode && activePlayer && (
+              {activePlayer && (
                 <div style={card}>
-                  <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Advanced role matrix</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Position roles</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
                     {SLOT_META.map((slot) => {
                       const face = prefMeta(prefScore(activePlayer.id, slot.code));
