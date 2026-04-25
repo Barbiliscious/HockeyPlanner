@@ -48,6 +48,7 @@ export default function FieldHockeyPositionPlannerV2() {
   const [lockedSlots, setLockedSlots] = useState({});
   const [selected, setSelected] = useState(null);
   const [readOnlyMode, setReadOnlyMode] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 600);
   const [message, setMessage] = useState("");
   const [loadInput, setLoadInput] = useState("");
   const [summaryText, setSummaryText] = useState("");
@@ -132,6 +133,12 @@ export default function FieldHockeyPositionPlannerV2() {
     };
     window.addEventListener("pointerdown", closeMenus);
     return () => window.removeEventListener("pointerdown", closeMenus);
+  }, []);
+
+  useEffect(() => {
+    const updateMobile = () => setIsMobile(window.innerWidth < 600);
+    window.addEventListener("resize", updateMobile);
+    return () => window.removeEventListener("resize", updateMobile);
   }, []);
 
   useEffect(() => {
@@ -995,6 +1002,7 @@ export default function FieldHockeyPositionPlannerV2() {
                     key={name}
                     style={{
                       ...secondaryBtn,
+                      flex: isMobile ? "1 1 calc(50% - 8px)" : "0 0 auto",
                       background: formation === name ? t.accentSoft : t.panelAlt,
                       border: `1px solid ${formation === name ? t.accent : t.border}`,
                     }}
@@ -1005,7 +1013,7 @@ export default function FieldHockeyPositionPlannerV2() {
                 ))}
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginTop: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fit, minmax(110px, 1fr))", gap: 10, marginTop: 14 }}>
                 {[
                   { label: "Experienced", value: lineupSummary.experienced, face: prefMeta(3) },
                   { label: "Capable", value: lineupSummary.capable, face: prefMeta(2) },
@@ -1031,11 +1039,11 @@ export default function FieldHockeyPositionPlannerV2() {
               )}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "minmax(0, 1.2fr) minmax(320px, 0.8fr)", gap: 16 }}>
               <div style={card}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
                   <div style={{ fontSize: 18, fontWeight: 700 }}>Pitch view</div>
-                  <button style={{ ...secondaryBtn, padding: "8px 12px" }} onClick={() => setPositionViewOpen((prev) => !prev)}>
+                  <button style={{ ...secondaryBtn, padding: "8px 12px", width: isMobile ? "100%" : "auto" }} onClick={() => setPositionViewOpen((prev) => !prev)}>
                     Position View
                   </button>
                 </div>
@@ -1068,6 +1076,12 @@ export default function FieldHockeyPositionPlannerV2() {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+                {isMobile && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ display: "block", fontSize: 13, color: t.muted, marginBottom: 6 }}>Marker size: {markerSize.toFixed(1)}</label>
+                    <input type="range" min="1" max="5" step="0.5" value={markerSize} onChange={(e) => setMarkerSize(Number(e.target.value))} style={{ width: "100%", minHeight: 40 }} />
                   </div>
                 )}
                 <div ref={pitchWrapRef} style={{ position: "relative", background: t.fieldBg, border: `1px solid ${t.border}`, borderRadius: 14, padding: 8 }}>
@@ -1150,10 +1164,12 @@ export default function FieldHockeyPositionPlannerV2() {
                     </div>
                   )}
                 </div>
-                <div style={{ marginTop: 10 }}>
-                  <label style={{ display: "block", fontSize: 13, color: t.muted, marginBottom: 6 }}>Marker size: {markerSize.toFixed(1)}</label>
-                  <input type="range" min="1" max="5" step="0.5" value={markerSize} onChange={(e) => setMarkerSize(Number(e.target.value))} style={{ width: "100%" }} />
-                </div>
+                {!isMobile && (
+                  <div style={{ marginTop: 10 }}>
+                    <label style={{ display: "block", fontSize: 13, color: t.muted, marginBottom: 6 }}>Marker size: {markerSize.toFixed(1)}</label>
+                    <input type="range" min="1" max="5" step="0.5" value={markerSize} onChange={(e) => setMarkerSize(Number(e.target.value))} style={{ width: "100%" }} />
+                  </div>
+                )}
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
