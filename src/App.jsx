@@ -100,6 +100,14 @@ export default function FieldHockeyPositionPlannerV2() {
     setNewPlayer("");
     setActivePlayerId((prev) => prev ?? player.id);
     setMessage(`${name} added.`);
+
+    // Append the new player as a row in the paste table
+    setBulkImport((prev) => {
+      const header = ["Player", ...SLOT_META.map(s => s.displayCode)].join("\t");
+      const newRow = [name, ...SLOT_META.map(() => "")].join("\t");
+      if (!prev.trim()) return `${header}\n${newRow}`;
+      return `${prev.trimEnd()}\n${newRow}`;
+    });
   };
 
   const applySpreadsheetData = (aoa) => {
@@ -169,7 +177,6 @@ export default function FieldHockeyPositionPlannerV2() {
     // Tab delimited support
     const aoa = rows.map(r => r.split('\t'));
     applySpreadsheetData(aoa);
-    setBulkImport("");
   };
 
   const removePlayer = (id) => {
