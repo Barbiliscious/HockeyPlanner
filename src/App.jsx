@@ -570,13 +570,9 @@ export default function FieldHockeyPositionPlannerV2() {
 
             <div style={card}>
               <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Squad cards</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
                 {!players.length && <div style={{ color: t.muted }}>No players added yet.</div>}
                 {players.map((player) => {
-                  const best = SLOT_META.filter((slot) => prefScore(player.id, slot.code) === 3).map((slot) => slot.code);
-                  const good = SLOT_META.filter((slot) => prefScore(player.id, slot.code) === 2).map((slot) => slot.code);
-                  const face3 = prefMeta(3);
-                  const face2 = prefMeta(2);
                   return (
                     <div
                       key={player.id}
@@ -594,13 +590,20 @@ export default function FieldHockeyPositionPlannerV2() {
                         <div style={{ fontWeight: 800 }}>{player.name}</div>
                         <button style={{ ...secondaryBtn, padding: "6px 10px" }} onClick={() => removePlayer(player.id)}>Remove</button>
                       </div>
+                      {/* Show all 4 preference levels with their colours and icons */}
                       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        <div style={pill(face3)}><face3.Icon size={14} /> {best.slice(0, 3).join(" ") || "None set"}</div>
-                        <div style={pill(face2)}><face2.Icon size={14} /> {good.slice(0, 3).join(" ") || "None set"}</div>
+                        {PREF_LEVELS.map((face) => {
+                          const positions = SLOT_META
+                            .filter((slot) => prefScore(player.id, slot.code) === face.value)
+                            .map((slot) => slot.code);
+                          if (!positions.length) return null;
+                          return (
+                            <div key={face.value} style={pill(face)}>
+                              <face.Icon size={14} /> {positions.join(" ")}
+                            </div>
+                          );
+                        })}
                       </div>
-                      <button style={primaryBtn} onClick={() => { setActivePlayerId(player.id); setTab("Roles"); }}>
-                        Edit roles
-                      </button>
                     </div>
                   );
                 })}
