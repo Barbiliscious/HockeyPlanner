@@ -1,15 +1,15 @@
 export const SLOT_META = [
-  { code: "GK", name: "Goalkeeper", group: "Defence" },
-  { code: "FBL", name: "Full Back Left", group: "Defence" },
-  { code: "FBR", name: "Full Back Right", group: "Defence" },
-  { code: "HBL", name: "Half Back Left", group: "Midfield" },
-  { code: "HBC", name: "Half Back Centre", group: "Midfield" },
-  { code: "HBR", name: "Half Back Right", group: "Midfield" },
-  { code: "INL", name: "Inner Left", group: "Attack" },
-  { code: "INR", name: "Inner Right", group: "Attack" },
-  { code: "FWDL", name: "Forward Left", group: "Attack" },
-  { code: "FWDC", name: "Forward Centre", group: "Attack" },
-  { code: "FWDR", name: "Forward Right", group: "Attack" },
+  { code: "GK", displayCode: "GK", name: "Goalkeeper", group: "Defence" },
+  { code: "FBL", displayCode: "FB-L", name: "Full Back Left", group: "Defence" },
+  { code: "FBR", displayCode: "FB-R", name: "Full Back Right", group: "Defence" },
+  { code: "HBL", displayCode: "HB-L", name: "Half Back Left", group: "Midfield" },
+  { code: "HBC", displayCode: "HB-C", name: "Half Back Centre", group: "Midfield" },
+  { code: "HBR", displayCode: "HB-R", name: "Half Back Right", group: "Midfield" },
+  { code: "INL", displayCode: "IN-L", name: "Inner Left", group: "Attack" },
+  { code: "INR", displayCode: "IN-R", name: "Inner Right", group: "Attack" },
+  { code: "FWDL", displayCode: "FWD-L", name: "Forward Left", group: "Attack" },
+  { code: "FWDC", displayCode: "FWD-C", name: "Forward Centre", group: "Attack" },
+  { code: "FWDR", displayCode: "FWD-R", name: "Forward Right", group: "Attack" },
 ];
 
 export const FORMATIONS = {
