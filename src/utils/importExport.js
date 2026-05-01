@@ -1,4 +1,5 @@
 import { FORMATIONS, FORMATION_NAMES, SLOT_META } from '../data/positionModel';
+import { PREF_LEVELS } from '../data/preferenceModel';
 import * as XLSX from 'xlsx';
 
 export function clampName(n) {
@@ -15,6 +16,20 @@ export function nl(v) {
 
 export function pk(playerId, slotCode) {
   return `${playerId}__${slotCode}`;
+}
+
+export function rebuildBulkImportText(players, preferences) {
+  const headers = ["Player", ...SLOT_META.map((slot) => slot.displayCode)];
+  const labelByValue = new Map(PREF_LEVELS.map((level) => [level.value, level.label]));
+  const rows = (players || []).map((player) => [
+    player.name,
+    ...SLOT_META.map((slot) => {
+      const value = preferences?.[pk(player.id, slot.code)];
+      return typeof value === "number" ? labelByValue.get(value) || "" : "";
+    }),
+  ]);
+
+  return [headers, ...rows].map((row) => row.join("\t")).join("\n");
 }
 
 const parseLevel = (val) => {
@@ -45,7 +60,7 @@ export function parseSpreadsheetData(aoa, players) {
     if (!clean) return null;
     const exists = players.some(p => nl(p.name) === nl(clean)) || playersToAdd.some(p => nl(p.name) === nl(clean));
     if (!exists) {
-      playersToAdd.push({ name: clean });
+      playersToAdd.push({ name: clean, unavailable: false });
       stats.created++;
     } else if (players.some(p => nl(p.name) === nl(clean))) {
       stats.matched++;

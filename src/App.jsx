@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { SLOT_META, FORMATIONS, FORMATION_NAMES, defaultLayouts, defaultPitch } from "./data/positionModel";
 import { PREF_LEVELS, scoreWeight, prefMeta } from "./data/preferenceModel";
-import { pk, parseSpreadsheetData, exportToExcel, encodeState, decodeState, exportMatchdaySummary, parseMatchdaySummary } from "./utils/importExport";
+import { pk, parseSpreadsheetData, exportToExcel, encodeState, decodeState, exportMatchdaySummary, parseMatchdaySummary, rebuildBulkImportText } from "./utils/importExport";
 import { getLineupSummary } from "./utils/lineupUtils";
 import * as XLSX from 'xlsx';
 
@@ -71,6 +71,8 @@ export default function FieldHockeyPositionPlannerV2() {
   const pitchPos = pitchLayouts[formation];
   const assignedSet = useMemo(() => new Set(Object.values(lineup).filter(Boolean)), [lineup]);
   const benchPlayers = useMemo(() => players.filter((p) => !assignedSet.has(p.id)), [players, assignedSet]);
+  const availableBenchPlayers = useMemo(() => benchPlayers.filter((p) => !p.unavailable), [benchPlayers]);
+  const unavailableBenchPlayers = useMemo(() => benchPlayers.filter((p) => p.unavailable), [benchPlayers]);
   const activePlayer = players.find((p) => p.id === activePlayerId) || null;
 
   const byId = (id) => players.find((p) => p.id === id) || null;
@@ -107,20 +109,26 @@ export default function FieldHockeyPositionPlannerV2() {
 
   const lineupSummary = useMemo(() => getLineupSummary(lineup, players, prefScore), [lineup, players, preferences]);
   const generatedSummary = useMemo(
-    () => exportMatchdaySummary(formation, fSlots, lineup, byId, benchPlayers),
-    [formation, fSlots, lineup, players, benchPlayers]
+    () => exportMatchdaySummary(formation, fSlots, lineup, byId, availableBenchPlayers),
+    [formation, fSlots, lineup, players, availableBenchPlayers]
   );
 
   const buildShareState = () => ({ formation, players, nextId, preferences, lineup, lockedSlots, pitchLayouts });
 
   const applyLoadedState = (state, successMessage = "State loaded.") => {
+    const normalizedPlayers = (state.players || []).map((player) => ({
+      ...player,
+      unavailable: player.unavailable === true,
+    }));
+    const normalizedPreferences = state.preferences || {};
     setFormation(state.formation || FORMATION_NAMES[0]);
-    setPlayers(state.players || []);
+    setPlayers(normalizedPlayers);
     setNextId(state.nextId || 1);
-    setPreferences(state.preferences || {});
+    setPreferences(normalizedPreferences);
     setLineup(state.lineup || {});
     setLockedSlots(state.lockedSlots || {});
     setPitchLayouts(state.pitchLayouts || defaultLayouts());
+    setBulkImport(rebuildBulkImportText(normalizedPlayers, normalizedPreferences));
     setLoadInput("");
     setActivePlayerId(null);
     setSelected(null);
@@ -181,7 +189,7 @@ export default function FieldHockeyPositionPlannerV2() {
     if (!name) return;
     if (players.some((p) => p.name.toLowerCase() === name.toLowerCase())) return setMessage("That player is already in the squad.");
 
-    const player = { id: nextId, name };
+    const player = { id: nextId, name, unavailable: false };
     setPlayers((prev) => [...prev, player]);
     setNextId((v) => v + 1);
     setNewPlayer("");
@@ -211,7 +219,7 @@ export default function FieldHockeyPositionPlannerV2() {
     playersToAdd.forEach((p) => {
       const cleanName = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
       if (existingByName.has(cleanName)) return;
-      created.push({ id: next, name: p.name });
+      created.push({ id: next, name: p.name, unavailable: false });
       existingByName.set(cleanName, next);
       next += 1;
     });
@@ -338,6 +346,13 @@ export default function FieldHockeyPositionPlannerV2() {
     setDragging(null);
   };
 
+  const toggleAvailability = (id) => {
+    setPlayers((prev) => prev.map((player) => (
+      player.id === id ? { ...player, unavailable: !player.unavailable } : player
+    )));
+    setSelected((prev) => (prev?.type === "bench" && prev.key === id ? null : prev));
+  };
+
   const playerCountLabel = () => {
     if (players.length <= MAX_PLAYERS) return `${players.length} players`;
     return `${players.length} players — ${players.length - MAX_PLAYERS} over squad limit`;
@@ -353,7 +368,7 @@ export default function FieldHockeyPositionPlannerV2() {
     const locked = new Set();
 
     Object.entries(lockedSlots).forEach(([slotCode, playerId]) => {
-      if (players.some((p) => p.id === playerId)) {
+      if (players.some((p) => p.id === playerId && !p.unavailable)) {
         nextLineup[slotCode] = playerId;
         usedPlayers.add(playerId);
         locked.add(slotCode);
@@ -364,6 +379,7 @@ export default function FieldHockeyPositionPlannerV2() {
     SLOT_META.forEach((slot) => {
       if (locked.has(slot.code)) return;
       players.forEach((player) => {
+        if (player.unavailable) return;
         if (usedPlayers.has(player.id)) return;
         pairs.push({
           slotCode: slot.code,
@@ -390,6 +406,7 @@ export default function FieldHockeyPositionPlannerV2() {
 
   const handleSelect = (type, key) => {
     if (dragStart?.moved) return;
+    if (type === "bench" && byId(key)?.unavailable) return;
 
     if (selected?.type === type && selected.key === key) {
       setSelected(null);
@@ -695,8 +712,8 @@ export default function FieldHockeyPositionPlannerV2() {
                   return (
                     <g key={`readonly-${spot.displayCode}-${spot.internalCode}`}>
                       <circle cx={pos.x} cy={pos.y} r={markerSize} fill="#a855f7" stroke={ringColor} strokeWidth="1.2" />
-                      <text x={pos.x} y={pos.y + 0.7} textAnchor="middle" fontSize="2" fontWeight="700" fill="#fff" pointerEvents="none">{spot.displayCode}</text>
-                      <text x={pos.x} y={pos.y + 8.2} textAnchor="middle" fontSize={player ? "3.1" : "2.5"} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
+                      <text x={pos.x} y={pos.y + 0.7} textAnchor="middle" fontSize={markerSize * (2 / 3.2)} fontWeight="700" fill="#fff" pointerEvents="none">{spot.displayCode}</text>
+                      <text x={pos.x} y={pos.y + 8.2} textAnchor="middle" fontSize={markerSize * ((player ? 3.1 : 2.5) / 3.2)} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
                     </g>
                   );
                 })}
@@ -722,12 +739,24 @@ export default function FieldHockeyPositionPlannerV2() {
               <div style={readOnlyCard}>
                 <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 10 }}>Substitutes</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {benchPlayers.length ? benchPlayers.map((player) => (
+                  {availableBenchPlayers.length ? availableBenchPlayers.map((player) => (
                     <div key={`readonly-sub-${player.id}`} style={{ background: rt.panelAlt, border: `1px solid ${rt.border}`, borderRadius: 10, padding: 10, fontWeight: 700 }}>
                       {player.name}
                     </div>
                   )) : <div style={{ color: rt.muted }}>None</div>}
                 </div>
+                {!!unavailableBenchPlayers.length && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ color: rt.muted, fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Unavailable</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {unavailableBenchPlayers.map((player) => (
+                        <div key={`readonly-unavailable-${player.id}`} style={{ background: rt.panelAlt, border: `1px solid ${rt.border}`, borderRadius: 10, padding: 10, fontWeight: 700, opacity: 0.45 }}>
+                          {player.name}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -897,6 +926,7 @@ export default function FieldHockeyPositionPlannerV2() {
                       style={{
                         outline: index >= MAX_PLAYERS ? "2px solid #DC2626" : "none",
                         outlineOffset: 2,
+                        opacity: player.unavailable ? 0.45 : 1,
                         background: activePlayerId === player.id ? t.selection : t.panelAlt,
                         border: `1px solid ${activePlayerId === player.id ? t.accent : t.border}`,
                         borderRadius: 16,
@@ -909,7 +939,23 @@ export default function FieldHockeyPositionPlannerV2() {
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                         <div style={{ fontWeight: 800 }}>{player.name}</div>
-                        <button style={{ ...secondaryBtn, padding: "6px 10px" }} onClick={(e) => { e.stopPropagation(); removePlayer(player.id); }}>Remove</button>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          <button
+                            style={{
+                              ...secondaryBtn,
+                              padding: "6px 10px",
+                              borderColor: player.unavailable ? t.border : "#166534",
+                              color: player.unavailable ? t.muted : "#166534",
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleAvailability(player.id);
+                            }}
+                          >
+                            {player.unavailable ? "Unavailable" : "Available"}
+                          </button>
+                          <button style={{ ...secondaryBtn, padding: "6px 10px" }} onClick={(e) => { e.stopPropagation(); removePlayer(player.id); }}>Remove</button>
+                        </div>
                       </div>
                       {/* Show all 4 preference levels with their colours and icons */}
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -1169,8 +1215,8 @@ export default function FieldHockeyPositionPlannerV2() {
                             onTouchStart={(e) => handleSlotTouchStart(spot.internalCode, e)}
                             onContextMenu={(e) => openSlotMenu(spot.internalCode, e)}
                           />
-                          <text x={pos.x} y={pos.y + 0.7} textAnchor="middle" fontSize="2" fontWeight="700" fill="#fff" pointerEvents="none">{spot.displayCode}</text>
-                          <text x={pos.x} y={pos.y + 8.2} textAnchor="middle" fontSize={player ? "3.1" : "2.5"} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
+                          <text x={pos.x} y={pos.y + 0.7} textAnchor="middle" fontSize={markerSize * (2 / 3.2)} fontWeight="700" fill="#fff" pointerEvents="none">{spot.displayCode}</text>
+                          <text x={pos.x} y={pos.y + 8.2} textAnchor="middle" fontSize={markerSize * ((player ? 3.1 : 2.5) / 3.2)} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
                         </g>
                       );
                     })}
@@ -1242,8 +1288,8 @@ export default function FieldHockeyPositionPlannerV2() {
                 <div style={card}>
                   <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Substitutes</div>
                   <div style={{ display: "grid", gap: 8 }}>
-                    {!benchPlayers.length && <div style={{ color: t.muted }}>No bench players.</div>}
-                    {benchPlayers.map((player) => {
+                    {!availableBenchPlayers.length && <div style={{ color: t.muted }}>No bench players.</div>}
+                    {availableBenchPlayers.map((player) => {
                       const strongPositions = SLOT_META
                         .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
                         .filter(({ pref }) => pref === 3 || pref === 2);
@@ -1265,6 +1311,33 @@ export default function FieldHockeyPositionPlannerV2() {
                         </div>
                       );
                     })}
+                    {!!unavailableBenchPlayers.length && (
+                      <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                        <div style={{ color: t.muted, fontSize: 13, fontWeight: 800 }}>Unavailable</div>
+                        {unavailableBenchPlayers.map((player) => {
+                          const strongPositions = SLOT_META
+                            .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
+                            .filter(({ pref }) => pref === 3 || pref === 2);
+                          return (
+                            <div key={`unavailable-${player.id}`} style={{ background: t.panelAlt, border: `1px solid ${t.border}`, borderRadius: 14, padding: 12, cursor: "not-allowed", fontWeight: 700, opacity: 0.45 }}>
+                              <div>{player.name}</div>
+                              {!!strongPositions.length && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                                  {strongPositions.map(({ code, pref }) => {
+                                    const face = prefMeta(pref);
+                                    return (
+                                      <span key={`${player.id}-unavailable-${code}`} style={{ background: face.bg, color: face.color, border: `1px solid ${face.border}`, borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+                                        {code}
+                                      </span>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
