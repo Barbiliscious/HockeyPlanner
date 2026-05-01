@@ -515,21 +515,51 @@ export default function FieldHockeyPositionPlannerV2() {
     copyText(code, "Copied!");
   };
 
-  const copyLink = () => {
+  const buildShareUrl = (readOnly = false) => {
     const code = encodeState(buildShareState());
-    if (!code) return setMessage("Could not generate share link.");
+    if (!code) return null;
     const url = new URL(`${window.location.origin}${window.location.pathname}`);
+    if (readOnly) url.searchParams.set("view", "readonly");
     url.searchParams.set("state", code);
+    return url.toString();
+  };
+
+  const copyLink = () => {
+    const url = buildShareUrl();
+    if (!url) return setMessage("Could not generate share link.");
     copyText(url.toString(), "Link copied!");
   };
 
   const copyReadOnlyLink = () => {
-    const code = encodeState(buildShareState());
-    if (!code) return setMessage("Could not generate view-only link.");
-    const url = new URL(`${window.location.origin}${window.location.pathname}`);
-    url.searchParams.set("view", "readonly");
-    url.searchParams.set("state", code);
-    copyText(url.toString(), "View-only link copied!");
+    const url = buildShareUrl(true);
+    if (!url) return setMessage("Could not generate view-only link.");
+    copyText(url, "View-only link copied!");
+  };
+
+  const copyShortLink = async (readOnly = false) => {
+    const url = buildShareUrl(readOnly);
+    if (!url) return setMessage(readOnly ? "Could not generate view-only link." : "Could not generate share link.");
+
+    setShareNotice("Shortening...");
+
+    try {
+      const response = await fetch("/api/shorten", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data.shortURL) {
+        setShareNotice("");
+        return setMessage(data.error || "Could not create short link.");
+      }
+
+      copyText(data.shortURL, readOnly ? "Short view-only link copied!" : "Short link copied!");
+    } catch {
+      setShareNotice("");
+      setMessage("Could not create short link.");
+    }
   };
 
   const loadSummary = () => {
@@ -1254,6 +1284,8 @@ export default function FieldHockeyPositionPlannerV2() {
                   <button style={secondaryBtn} onClick={copyCode}>Copy code</button>
                   <button style={secondaryBtn} onClick={copyLink}>Copy link</button>
                   <button style={secondaryBtn} onClick={copyReadOnlyLink}>Copy view-only link</button>
+                  <button style={secondaryBtn} onClick={() => copyShortLink(false)}>Copy short link</button>
+                  <button style={secondaryBtn} onClick={() => copyShortLink(true)}>Copy short view-only link</button>
                   {!!shareNotice && <span style={{ color: t.muted, fontSize: 13, fontWeight: 700 }}>{shareNotice}</span>}
                 </div>
               </div>
