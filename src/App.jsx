@@ -65,6 +65,7 @@ export default function FieldHockeyPositionPlannerV2() {
   const fileInputRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const pitchWrapRef = useRef(null);
+  const suppressSlotClickRef = useRef(false);
 
   const t = THEMES[themeMode];
   const fSlots = FORMATIONS[formation];
@@ -83,12 +84,16 @@ export default function FieldHockeyPositionPlannerV2() {
   const prefValue = (playerId, slotCode) => preferences[pk(playerId, slotCode)];
   const isLocked = (slotCode) => lineup[slotCode] && lockedSlots[slotCode] === lineup[slotCode];
   const isSelected = (type, key) => selected?.type === type && selected.key === key;
-  const selectedBenchId = selected?.type === "bench" ? selected.key : null;
+  const selectedBenchId = (selected?.type === "bench" || selected?.type === "unavailable") ? selected.key : null;
 
   const preferenceRingColor = (pref) => {
     if (typeof pref === "number") return prefMeta(pref).bg;
     return "#6B7280";
   };
+
+  const defaultPreferencesForPlayer = (playerId) => Object.fromEntries(
+    SLOT_META.map((slot) => [pk(playerId, slot.code), 1])
+  );
 
   const prefIconProps = { size: 18, strokeWidth: 3, fill: "currentColor" };
   const prefSymbolMeta = (value) => {
@@ -143,7 +148,7 @@ export default function FieldHockeyPositionPlannerV2() {
   useEffect(() => {
     const closeMenus = () => {
       setSlotMenu(null);
-      setSelected((prev) => (prev?.type === "bench" ? null : prev));
+      setSelected((prev) => (prev?.type === "bench" || prev?.type === "unavailable" ? null : prev));
     };
     window.addEventListener("pointerdown", closeMenus);
     return () => window.removeEventListener("pointerdown", closeMenus);
@@ -158,6 +163,10 @@ export default function FieldHockeyPositionPlannerV2() {
   useEffect(() => {
     setSummaryText(generatedSummary);
   }, [generatedSummary]);
+
+  useEffect(() => {
+    setBulkImport(rebuildBulkImportText(players, preferences));
+  }, [players, preferences]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -191,18 +200,11 @@ export default function FieldHockeyPositionPlannerV2() {
 
     const player = { id: nextId, name, unavailable: false };
     setPlayers((prev) => [...prev, player]);
+    setPreferences((prev) => ({ ...prev, ...defaultPreferencesForPlayer(player.id) }));
     setNextId((v) => v + 1);
     setNewPlayer("");
     setActivePlayerId(player.id);
     setMessage(players.length >= MAX_PLAYERS ? `${name} added. Squad is over the recommended ${MAX_PLAYERS}-player limit.` : `${name} added.`);
-
-    // Append the new player as a row in the paste table
-    setBulkImport((prev) => {
-      const header = ["Player", ...SLOT_META.map(s => s.displayCode)].join("\t");
-      const newRow = [name, ...SLOT_META.map(() => "")].join("\t");
-      if (!prev.trim()) return `${header}\n${newRow}`;
-      return `${prev.trimEnd()}\n${newRow}`;
-    });
   };
 
   const applySpreadsheetData = (aoa) => {
@@ -226,6 +228,9 @@ export default function FieldHockeyPositionPlannerV2() {
 
     const mergedPlayers = [...players, ...created];
     const nextPrefs = { ...preferences };
+    created.forEach((player) => {
+      Object.assign(nextPrefs, defaultPreferencesForPlayer(player.id));
+    });
     prefUpdates.forEach((u) => {
       const cleanName = u.name.toLowerCase().replace(/[^a-z0-9]+/g, "");
       const playerId = existingByName.get(cleanName);
@@ -296,7 +301,7 @@ export default function FieldHockeyPositionPlannerV2() {
       return next;
     });
     setActivePlayerId((prev) => (prev === id ? null : prev));
-    setSelected((prev) => (prev?.type === "bench" && prev.key === id ? null : prev));
+    setSelected((prev) => ((prev?.type === "bench" || prev?.type === "unavailable") && prev.key === id ? null : prev));
     setMessage(`${player?.name || "Player"} removed.`);
   };
 
@@ -314,6 +319,7 @@ export default function FieldHockeyPositionPlannerV2() {
     e.preventDefault();
     e.stopPropagation();
     const point = e.touches ? e.touches[0] : e;
+    suppressSlotClickRef.current = false;
     setDragStart({ x: point.clientX, y: point.clientY, slotCode, moved: false });
     setDragging(slotCode);
   };
@@ -324,7 +330,8 @@ export default function FieldHockeyPositionPlannerV2() {
     const rect = e.currentTarget.getBoundingClientRect();
     const dx = Math.abs(point.clientX - (dragStart?.x ?? point.clientX));
     const dy = Math.abs(point.clientY - (dragStart?.y ?? point.clientY));
-    const moved = dx > 6 || dy > 6;
+    const moved = dx > 5 || dy > 5;
+    if (moved) suppressSlotClickRef.current = true;
     if (moved && longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     if (dragStart && moved !== dragStart.moved) setDragStart((prev) => ({ ...prev, moved }));
     if (!moved) return;
@@ -336,6 +343,11 @@ export default function FieldHockeyPositionPlannerV2() {
 
   const endDrag = () => {
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    if (suppressSlotClickRef.current) {
+      window.setTimeout(() => {
+        suppressSlotClickRef.current = false;
+      }, 250);
+    }
     setDragging(null);
     setDragStart(null);
   };
@@ -350,7 +362,7 @@ export default function FieldHockeyPositionPlannerV2() {
     setPlayers((prev) => prev.map((player) => (
       player.id === id ? { ...player, unavailable: !player.unavailable } : player
     )));
-    setSelected((prev) => (prev?.type === "bench" && prev.key === id ? null : prev));
+    setSelected((prev) => ((prev?.type === "bench" || prev?.type === "unavailable") && prev.key === id ? null : prev));
   };
 
   const playerCountLabel = () => {
@@ -360,6 +372,80 @@ export default function FieldHockeyPositionPlannerV2() {
 
   const toggleActivePlayer = (playerId) => {
     setActivePlayerId((prev) => (prev === playerId ? null : playerId));
+  };
+
+  const getSelectedSlotPlayerId = () => {
+    if (selected?.type !== "slot") return null;
+    return lineup[selected.key] || null;
+  };
+
+  const moveSelectedSlotToUnavailable = () => {
+    const selectedPlayerId = getSelectedSlotPlayerId();
+    if (!selectedPlayerId) return false;
+    setLineup((prev) => ({ ...prev, [selected.key]: null }));
+    setLockedSlots((prev) => {
+      const next = { ...prev };
+      delete next[selected.key];
+      return next;
+    });
+    setPlayers((prev) => prev.map((player) => (
+      player.id === selectedPlayerId ? { ...player, unavailable: true } : player
+    )));
+    setSelected(null);
+    return true;
+  };
+
+  const swapSlotWithPlayer = (slotCode, playerId, targetUnavailable) => {
+    const slotPlayerId = lineup[slotCode] || null;
+    setLineup((prev) => ({ ...prev, [slotCode]: playerId }));
+    setLockedSlots((prev) => {
+      const next = { ...prev };
+      delete next[slotCode];
+      return next;
+    });
+    setPlayers((prev) => prev.map((player) => {
+      if (player.id === playerId) return { ...player, unavailable: false };
+      if (slotPlayerId && player.id === slotPlayerId) return { ...player, unavailable: targetUnavailable };
+      return player;
+    }));
+    setSelected(null);
+  };
+
+  const swapSlots = (slotA, slotB) => {
+    const nextLineup = { ...lineup };
+    const nextLocks = { ...lockedSlots };
+    const a = nextLineup[slotA] || null;
+    const b = nextLineup[slotB] || null;
+    nextLineup[slotA] = b;
+    nextLineup[slotB] = a;
+    delete nextLocks[slotA];
+    delete nextLocks[slotB];
+    setLineup(nextLineup);
+    setLockedSlots(nextLocks);
+    setSelected(null);
+  };
+
+  const moveSlotPlayerToBench = (slotCode) => {
+    if (!lineup[slotCode]) {
+      setSelected(null);
+      return;
+    }
+    setLineup((prev) => ({ ...prev, [slotCode]: null }));
+    setLockedSlots((prev) => {
+      const next = { ...prev };
+      delete next[slotCode];
+      return next;
+    });
+    setSelected(null);
+  };
+
+  const swapBenchWithUnavailable = (benchPlayerId, unavailablePlayerId) => {
+    setPlayers((prev) => prev.map((player) => {
+      if (player.id === benchPlayerId) return { ...player, unavailable: true };
+      if (player.id === unavailablePlayerId) return { ...player, unavailable: false };
+      return player;
+    }));
+    setSelected(null);
   };
 
   const generateLineup = () => {
@@ -404,47 +490,64 @@ export default function FieldHockeyPositionPlannerV2() {
     setMessage("Best lineup generated.");
   };
 
-  const handleSelect = (type, key) => {
+  const handleSelect = (type, key, source) => {
+    if (type === "slot" && suppressSlotClickRef.current) {
+      suppressSlotClickRef.current = false;
+      return;
+    }
     if (dragStart?.moved) return;
-    if (type === "bench" && byId(key)?.unavailable) return;
 
-    if (selected?.type === type && selected.key === key) {
+    if (selected?.type === type && selected.key === key && selected.source === source) {
       setSelected(null);
       return;
     }
 
     if (!selected) {
-      setSelected({ type, key });
+      setSelected({ type, key, source });
       return;
     }
 
-    if (selected.type === "bench" && type === "bench") {
-      setSelected({ type, key });
+    if (selected.source === source && !(source === "pitch" && selected.source === "pitch")) {
+      setSelected({ type, key, source });
       return;
     }
 
-    const nextLineup = { ...lineup };
-    const nextLocks = { ...lockedSlots };
-
-    if (selected.type === "slot" && type === "slot") {
-      const slotA = selected.key;
-      const slotB = key;
-      const a = nextLineup[slotA] || null;
-      const b = nextLineup[slotB] || null;
-      nextLineup[slotA] = b;
-      nextLineup[slotB] = a;
-      delete nextLocks[slotA];
-      delete nextLocks[slotB];
-    } else {
-      const benchPid = selected.type === "bench" ? selected.key : key;
-      const slotCode = selected.type === "slot" ? selected.key : key;
-      nextLineup[slotCode] = benchPid;
-      delete nextLocks[slotCode];
+    if (selected.source === "pitch" && source === "pitch" && selected.type === "slot" && type === "slot") {
+      swapSlots(selected.key, key);
+      return;
     }
 
-    setLineup(nextLineup);
-    setLockedSlots(nextLocks);
-    setSelected(null);
+    if ((selected.source === "pitch" || selected.source === "starting") && source === "bench") {
+      moveSlotPlayerToBench(selected.key);
+      return;
+    }
+
+    if (selected.source === "bench" && (source === "pitch" || source === "starting")) {
+      swapSlotWithPlayer(key, selected.key, false);
+      return;
+    }
+
+    if ((selected.source === "starting" && source === "unavailable") || (selected.source === "pitch" && source === "unavailable")) {
+      swapSlotWithPlayer(selected.key, key, true);
+      return;
+    }
+
+    if (selected.source === "unavailable" && (source === "starting" || source === "pitch")) {
+      swapSlotWithPlayer(key, selected.key, true);
+      return;
+    }
+
+    if (selected.source === "bench" && source === "unavailable") {
+      swapBenchWithUnavailable(selected.key, key);
+      return;
+    }
+
+    if (selected.source === "unavailable" && source === "bench") {
+      swapBenchWithUnavailable(key, selected.key);
+      return;
+    }
+
+    setSelected({ type, key, source });
   };
 
   const toggleLock = (slotCode) => {
@@ -520,6 +623,11 @@ export default function FieldHockeyPositionPlannerV2() {
     } catch {
       setMessage("Could not copy to clipboard.");
     }
+  };
+
+  const handleUnavailableTargetClick = (e) => {
+    e?.stopPropagation();
+    if (moveSelectedSlotToUnavailable()) return;
   };
 
   const copySummary = () => {
@@ -713,7 +821,7 @@ export default function FieldHockeyPositionPlannerV2() {
                     <g key={`readonly-${spot.displayCode}-${spot.internalCode}`}>
                       <circle cx={pos.x} cy={pos.y} r={markerSize} fill="#a855f7" stroke={ringColor} strokeWidth="1.2" />
                       <text x={pos.x} y={pos.y + 0.7} textAnchor="middle" fontSize={markerSize * (2 / 3.2)} fontWeight="700" fill="#fff" pointerEvents="none">{spot.displayCode}</text>
-                      <text x={pos.x} y={pos.y + 8.2} textAnchor="middle" fontSize={markerSize * ((player ? 3.1 : 2.5) / 3.2)} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
+                      <text x={pos.x} y={pos.y + markerSize * (8.2 / 3.2)} textAnchor="middle" fontSize={markerSize * ((player ? 3.1 : 2.5) / 3.2)} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
                     </g>
                   );
                 })}
@@ -996,9 +1104,40 @@ export default function FieldHockeyPositionPlannerV2() {
                       padding: 12,
                       cursor: "pointer",
                       fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
+                      opacity: player.unavailable ? 0.6 : 1,
                     }}
                   >
-                    {player.name}
+                    <span>{player.name}</span>
+                    <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      <button
+                        style={{
+                          ...secondaryBtn,
+                          padding: "5px 8px",
+                          fontSize: 12,
+                          borderColor: player.unavailable ? t.border : "#166534",
+                          color: player.unavailable ? t.muted : "#166534",
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAvailability(player.id);
+                        }}
+                      >
+                        {player.unavailable ? "Unavailable" : "Available"}
+                      </button>
+                      <button
+                        style={{ ...secondaryBtn, padding: "5px 8px", fontSize: 12 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removePlayer(player.id);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </span>
                   </div>
                 ))}
               </div>
@@ -1210,13 +1349,13 @@ export default function FieldHockeyPositionPlannerV2() {
                             fill={selectedSlot ? t.accent : "#a855f7"}
                             stroke={slotRingColor}
                             strokeWidth={selectedSlot ? 1.7 : 1.1}
-                            onClick={() => handleSelect("slot", spot.internalCode)}
+                            onClick={() => handleSelect("slot", spot.internalCode, "pitch")}
                             onMouseDown={(e) => startDrag(spot.internalCode, e)}
                             onTouchStart={(e) => handleSlotTouchStart(spot.internalCode, e)}
                             onContextMenu={(e) => openSlotMenu(spot.internalCode, e)}
                           />
                           <text x={pos.x} y={pos.y + 0.7} textAnchor="middle" fontSize={markerSize * (2 / 3.2)} fontWeight="700" fill="#fff" pointerEvents="none">{spot.displayCode}</text>
-                          <text x={pos.x} y={pos.y + 8.2} textAnchor="middle" fontSize={markerSize * ((player ? 3.1 : 2.5) / 3.2)} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
+                          <text x={pos.x} y={pos.y + markerSize * (7 / 3.2)} textAnchor="middle" fontSize={markerSize * ((player ? 3.1 : 2.5) / 3.2)} fontWeight={player ? "800" : "500"} fill="#000" pointerEvents="none">{player ? player.name : spot.displayName}</text>
                         </g>
                       );
                     })}
@@ -1264,7 +1403,7 @@ export default function FieldHockeyPositionPlannerV2() {
                       const symbol = player ? prefSymbolMeta(prefScore(player.id, spot.internalCode)) : null;
                       const locked = isLocked(spot.internalCode);
                       return (
-                        <div key={spot.displayCode + spot.internalCode} onClick={() => handleSelect("slot", spot.internalCode)} style={{ background: isSelected("slot", spot.internalCode) ? t.selection : t.panelAlt, border: `1px solid ${locked ? "#EAB308" : isSelected("slot", spot.internalCode) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                        <div key={spot.displayCode + spot.internalCode} onClick={() => handleSelect("slot", spot.internalCode, "starting")} style={{ background: isSelected("slot", spot.internalCode) ? t.selection : t.panelAlt, border: `1px solid ${locked ? "#EAB308" : isSelected("slot", spot.internalCode) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 12, color: t.muted, fontWeight: 700 }}>{spot.displayCode} • {spot.displayName}</div>
                             <div style={{ fontSize: 15, fontWeight: 800, marginTop: 2 }}>{player ? player.name : "— Empty —"}</div>
@@ -1294,7 +1433,7 @@ export default function FieldHockeyPositionPlannerV2() {
                         .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
                         .filter(({ pref }) => pref === 3 || pref === 2);
                       return (
-                        <div key={player.id} onClick={() => handleSelect("bench", player.id)} style={{ background: isSelected("bench", player.id) ? t.selection : t.panelAlt, border: `1px solid ${isSelected("bench", player.id) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", fontWeight: 700 }}>
+                        <div key={player.id} onClick={() => handleSelect("bench", player.id, "bench")} style={{ background: isSelected("bench", player.id) ? t.selection : t.panelAlt, border: `1px solid ${isSelected("bench", player.id) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", fontWeight: 700 }}>
                           <div>{player.name}</div>
                           {!!strongPositions.length && (
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
@@ -1311,35 +1450,45 @@ export default function FieldHockeyPositionPlannerV2() {
                         </div>
                       );
                     })}
-                    {!!unavailableBenchPlayers.length && (
-                      <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                        <div style={{ color: t.muted, fontSize: 13, fontWeight: 800 }}>Unavailable</div>
-                        {unavailableBenchPlayers.map((player) => {
-                          const strongPositions = SLOT_META
-                            .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
-                            .filter(({ pref }) => pref === 3 || pref === 2);
-                          return (
-                            <div key={`unavailable-${player.id}`} style={{ background: t.panelAlt, border: `1px solid ${t.border}`, borderRadius: 14, padding: 12, cursor: "not-allowed", fontWeight: 700, opacity: 0.45 }}>
-                              <div>{player.name}</div>
-                              {!!strongPositions.length && (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                                  {strongPositions.map(({ code, pref }) => {
-                                    const face = prefMeta(pref);
-                                    return (
-                                      <span key={`${player.id}-unavailable-${code}`} style={{ background: face.bg, color: face.color, border: `1px solid ${face.border}`, borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
-                                        {code}
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 </div>
+
+                {!!unavailableBenchPlayers.length && (
+                  <div style={card} onClick={handleUnavailableTargetClick}>
+                    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Unavailable</div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {unavailableBenchPlayers.map((player) => {
+                        const strongPositions = SLOT_META
+                          .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
+                          .filter(({ pref }) => pref === 3 || pref === 2);
+                        return (
+                          <div
+                            key={`unavailable-${player.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelect("unavailable", player.id, "unavailable");
+                            }}
+                            style={{ background: isSelected("unavailable", player.id) ? t.selection : t.panelAlt, border: `1px solid ${isSelected("unavailable", player.id) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", fontWeight: 700, opacity: 0.45 }}
+                          >
+                            <div>{player.name}</div>
+                            {!!strongPositions.length && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                                {strongPositions.map(({ code, pref }) => {
+                                  const face = prefMeta(pref);
+                                  return (
+                                    <span key={`${player.id}-unavailable-${code}`} style={{ background: face.bg, color: face.color, border: `1px solid ${face.border}`, borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+                                      {code}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
