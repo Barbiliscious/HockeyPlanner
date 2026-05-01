@@ -491,63 +491,173 @@ export default function FieldHockeyPositionPlannerV2() {
   };
 
   const handleSelect = (type, key, source) => {
-    if (type === "slot" && suppressSlotClickRef.current) {
-      suppressSlotClickRef.current = false;
-      return;
-    }
+    // Never select during a drag reposition
     if (dragStart?.moved) return;
 
-    if (selected?.type === type && selected.key === key && selected.source === source) {
+    // Clicking the exact same item again = deselect
+    if (selected?.type === type && selected?.key === key && selected?.source === source) {
       setSelected(null);
       return;
     }
 
+    // Nothing selected yet = select this item
     if (!selected) {
       setSelected({ type, key, source });
       return;
     }
 
-    if (selected.source === source && !(source === "pitch" && selected.source === "pitch")) {
+    // Both items are slots (pitch circles or Starting 11 list rows)
+    if (selected.type === "slot" && type === "slot") {
+      if (selected.source === "starting" && source === "starting") {
+        // Both from Starting 11 list -> just re-select the new one (no swap)
+        setSelected({ type, key, source });
+        return;
+      }
+      // Any other slot-to-slot combo (pitch/pitch, pitch/starting, starting/pitch) -> swap
+      const nextLineup = { ...lineup };
+      const a = nextLineup[selected.key] ?? null;
+      const b = nextLineup[key] ?? null;
+      nextLineup[selected.key] = b;
+      nextLineup[key] = a;
+      const nextLocks = { ...lockedSlots };
+      delete nextLocks[selected.key];
+      delete nextLocks[key];
+      setLineup(nextLineup);
+      setLockedSlots(nextLocks);
+      setSelected(null);
+      return;
+    }
+
+    // Selected item is a slot, clicked item is a bench player -> vacate the slot
+    if (selected.type === "slot" && type === "bench") {
+      const nextLineup = { ...lineup };
+      nextLineup[selected.key] = null;
+      const nextLocks = { ...lockedSlots };
+      delete nextLocks[selected.key];
+      setLineup(nextLineup);
+      setLockedSlots(nextLocks);
+      setSelected(null);
+      return;
+    }
+
+    // Selected item is a bench player, clicked item is a slot -> move bench player into that slot
+    if (selected.type === "bench" && type === "slot") {
+      const benchPlayerId = selected.key;
+      const nextLineup = { ...lineup };
+      nextLineup[key] = benchPlayerId;
+      const nextLocks = { ...lockedSlots };
+      delete nextLocks[key];
+      setLineup(nextLineup);
+      setLockedSlots(nextLocks);
+      setSelected(null);
+      return;
+    }
+
+    // Both are bench players -> just re-select the new one
+    if (selected.type === "bench" && type === "bench") {
       setSelected({ type, key, source });
       return;
     }
 
-    if (selected.source === "pitch" && source === "pitch" && selected.type === "slot" && type === "slot") {
-      swapSlots(selected.key, key);
+    // Selected is a slot, clicked is an unavailable player -> mark slot's player unavailable and vacate the slot
+    if (selected.type === "slot" && type === "unavailable") {
+      const pid = lineup[selected.key];
+      if (pid) {
+        setPlayers((prev) => prev.map((p) => (
+          p.id === pid ? { ...p, unavailable: true } : p
+        )));
+        const nextLineup = { ...lineup };
+        nextLineup[selected.key] = null;
+        const nextLocks = { ...lockedSlots };
+        delete nextLocks[selected.key];
+        setLineup(nextLineup);
+        setLockedSlots(nextLocks);
+      }
+      setSelected(null);
       return;
     }
 
-    if ((selected.source === "pitch" || selected.source === "starting") && source === "bench") {
-      moveSlotPlayerToBench(selected.key);
+    // Selected is an unavailable player, clicked is a slot -> make player available and assign them
+    if (selected.type === "unavailable" && type === "slot") {
+      const pid = selected.key;
+      setPlayers((prev) => prev.map((p) => (
+        p.id === pid ? { ...p, unavailable: false } : p
+      )));
+      const nextLineup = { ...lineup };
+      nextLineup[key] = pid;
+      const nextLocks = { ...lockedSlots };
+      delete nextLocks[key];
+      setLineup(nextLineup);
+      setLockedSlots(nextLocks);
+      setSelected(null);
       return;
     }
 
-    if (selected.source === "bench" && (source === "pitch" || source === "starting")) {
-      swapSlotWithPlayer(key, selected.key, false);
+    // Move bench player to unavailable
+    if (selected.type === "bench" && type === "unavailable") {
+      const pid = selected.key;
+      setPlayers((prev) => prev.map((p) => (
+        p.id === pid ? { ...p, unavailable: true } : p
+      )));
+      setSelected(null);
       return;
     }
 
-    if ((selected.source === "starting" && source === "unavailable") || (selected.source === "pitch" && source === "unavailable")) {
-      swapSlotWithPlayer(selected.key, key, true);
+    // Move unavailable player back to bench
+    if (selected.type === "unavailable" && type === "bench") {
+      const pid = selected.key;
+      setPlayers((prev) => prev.map((p) => (
+        p.id === pid ? { ...p, unavailable: false } : p
+      )));
+      setSelected(null);
       return;
     }
 
-    if (selected.source === "unavailable" && (source === "starting" || source === "pitch")) {
-      swapSlotWithPlayer(key, selected.key, true);
+    // Just re-select
+    if (selected.type === "unavailable" && type === "unavailable") {
+      setSelected({ type, key, source });
       return;
     }
 
-    if (selected.source === "bench" && source === "unavailable") {
-      swapBenchWithUnavailable(selected.key, key);
-      return;
-    }
-
-    if (selected.source === "unavailable" && source === "bench") {
-      swapBenchWithUnavailable(key, selected.key);
-      return;
-    }
-
+    // Fallback: replace selection
     setSelected({ type, key, source });
+  };
+
+  const dropToPanel = (panel) => {
+    if (!selected) return;
+    if (panel === "bench") {
+      if (selected.type === "slot") {
+        const nextLineup = { ...lineup };
+        nextLineup[selected.key] = null;
+        const nextLocks = { ...lockedSlots };
+        delete nextLocks[selected.key];
+        setLineup(nextLineup);
+        setLockedSlots(nextLocks);
+      } else if (selected.type === "unavailable") {
+        const pid = selected.key;
+        setPlayers((prev) => prev.map((p) => (
+          p.id === pid ? { ...p, unavailable: false } : p
+        )));
+      }
+    } else if (panel === "unavailable") {
+      if (selected.type === "slot") {
+        const pid = lineup[selected.key];
+        if (pid) {
+          setPlayers((prev) => prev.map((p) => (
+            p.id === pid ? { ...p, unavailable: true } : p
+          )));
+          const nextLineup = { ...lineup };
+          nextLineup[selected.key] = null;
+          setLineup(nextLineup);
+        }
+      } else if (selected.type === "bench") {
+        const pid = selected.key;
+        setPlayers((prev) => prev.map((p) => (
+          p.id === pid ? { ...p, unavailable: true } : p
+        )));
+      }
+    }
+    setSelected(null);
   };
 
   const toggleLock = (slotCode) => {
@@ -1425,9 +1535,19 @@ export default function FieldHockeyPositionPlannerV2() {
                 </div>
 
                 <div style={card}>
-                  <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Substitutes</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>Substitutes</div>
+                    {selected && (
+                      <button
+                        style={{ ...secondaryBtn, padding: "6px 9px", fontSize: 12 }}
+                        onClick={() => dropToPanel("bench")}
+                      >
+                        ← Drop here
+                      </button>
+                    )}
+                  </div>
                   <div style={{ display: "grid", gap: 8 }}>
-                    {!availableBenchPlayers.length && <div style={{ color: t.muted }}>No bench players.</div>}
+                    {!availableBenchPlayers.length && <div style={{ color: t.muted }}>No substitutes.</div>}
                     {availableBenchPlayers.map((player) => {
                       const strongPositions = SLOT_META
                         .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
@@ -1453,42 +1573,51 @@ export default function FieldHockeyPositionPlannerV2() {
                   </div>
                 </div>
 
-                {!!unavailableBenchPlayers.length && (
-                  <div style={card} onClick={handleUnavailableTargetClick}>
-                    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Unavailable</div>
-                    <div style={{ display: "grid", gap: 8 }}>
-                      {unavailableBenchPlayers.map((player) => {
-                        const strongPositions = SLOT_META
-                          .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
-                          .filter(({ pref }) => pref === 3 || pref === 2);
-                        return (
-                          <div
-                            key={`unavailable-${player.id}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelect("unavailable", player.id, "unavailable");
-                            }}
-                            style={{ background: isSelected("unavailable", player.id) ? t.selection : t.panelAlt, border: `1px solid ${isSelected("unavailable", player.id) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", fontWeight: 700, opacity: 0.45 }}
-                          >
-                            <div>{player.name}</div>
-                            {!!strongPositions.length && (
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                                {strongPositions.map(({ code, pref }) => {
-                                  const face = prefMeta(pref);
-                                  return (
-                                    <span key={`${player.id}-unavailable-${code}`} style={{ background: face.bg, color: face.color, border: `1px solid ${face.border}`, borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
-                                      {code}
-                                    </span>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                <div style={card}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                    <div style={{ fontSize: 18, fontWeight: 700 }}>Unavailable</div>
+                    {selected && (
+                      <button
+                        style={{ ...secondaryBtn, padding: "6px 9px", fontSize: 12 }}
+                        onClick={() => dropToPanel("unavailable")}
+                      >
+                        ← Drop here
+                      </button>
+                    )}
                   </div>
-                )}
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {!unavailableBenchPlayers.length && <div style={{ color: t.muted }}>No unavailable players.</div>}
+                    {unavailableBenchPlayers.map((player) => {
+                      const strongPositions = SLOT_META
+                        .map((slot) => ({ code: slot.code, pref: prefValue(player.id, slot.code) }))
+                        .filter(({ pref }) => pref === 3 || pref === 2);
+                      return (
+                        <div
+                          key={`unavailable-${player.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelect("unavailable", player.id, "unavailable");
+                          }}
+                          style={{ background: isSelected("unavailable", player.id) ? t.selection : t.panelAlt, border: `1px solid ${isSelected("unavailable", player.id) ? t.accent : t.border}`, borderRadius: 14, padding: 12, cursor: "pointer", fontWeight: 700, opacity: 0.45 }}
+                        >
+                          <div>{player.name}</div>
+                          {!!strongPositions.length && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                              {strongPositions.map(({ code, pref }) => {
+                                const face = prefMeta(pref);
+                                return (
+                                  <span key={`${player.id}-unavailable-${code}`} style={{ background: face.bg, color: face.color, border: `1px solid ${face.border}`, borderRadius: 999, padding: "3px 7px", fontSize: 11, fontWeight: 800, lineHeight: 1 }}>
+                                    {code}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
