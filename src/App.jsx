@@ -36,7 +36,7 @@ const THEMES = {
 
 export default function FieldHockeyPositionPlannerV2() {
   const [themeMode, setThemeMode] = useState("dark");
-  const [tab, setTab] = useState("Squad");
+  const [tab, setTab] = useState("Lineup");
   const [formation, setFormation] = useState(FORMATION_NAMES[0]);
   const [players, setPlayers] = useState([]);
   const [nextId, setNextId] = useState(1);
@@ -60,6 +60,7 @@ export default function FieldHockeyPositionPlannerV2() {
   const [positionViewOpen, setPositionViewOpen] = useState(false);
   const [positionViewShowAll, setPositionViewShowAll] = useState(false);
   const [positionGuideOpen, setPositionGuideOpen] = useState(false);
+  const [spreadsheetOpen, setSpreadsheetOpen] = useState(false);
   const [slotMenu, setSlotMenu] = useState(null);
 
   const fileInputRef = useRef(null);
@@ -148,7 +149,6 @@ export default function FieldHockeyPositionPlannerV2() {
   useEffect(() => {
     const closeMenus = () => {
       setSlotMenu(null);
-      setSelected((prev) => (prev?.type === "bench" || prev?.type === "unavailable" ? null : prev));
     };
     window.addEventListener("pointerdown", closeMenus);
     return () => window.removeEventListener("pointerdown", closeMenus);
@@ -209,7 +209,7 @@ export default function FieldHockeyPositionPlannerV2() {
 
   const applySpreadsheetData = (aoa) => {
     const { playersToAdd, prefUpdates, stats } = parseSpreadsheetData(aoa, players);
-    
+
     if (!playersToAdd.length && !prefUpdates.length) {
       return setMessage("No valid data found to import.");
     }
@@ -242,7 +242,7 @@ export default function FieldHockeyPositionPlannerV2() {
     setNextId(next);
     setPreferences(nextPrefs);
     setActivePlayerId((prev) => prev ?? mergedPlayers[0]?.id ?? null);
-    
+
     let msg = `Import complete: ${stats.created} created, ${stats.matched} matched, ${stats.updated} preferences updated. Skipped ${stats.skipped} invalid/empty rows.`;
     if (stats.errors.length) {
       msg += ` Errors: ${stats.errors.join(" ")}`;
@@ -316,12 +316,14 @@ export default function FieldHockeyPositionPlannerV2() {
   };
 
   const startDrag = (slotCode, e) => {
+    if (e.type?.startsWith("touch") && !lineup[slotCode]) return false;
     e.preventDefault();
     e.stopPropagation();
     const point = e.touches ? e.touches[0] : e;
     suppressSlotClickRef.current = false;
     setDragStart({ x: point.clientX, y: point.clientY, slotCode, moved: false });
     setDragging(slotCode);
+    return true;
   };
 
   const onPitchMove = (e) => {
@@ -528,10 +530,11 @@ export default function FieldHockeyPositionPlannerV2() {
       return;
     }
 
-    // Selected item is a slot, clicked item is a bench player -> vacate the slot
+    // Selected item is a slot, clicked item is a bench player — swap them
     if (selected.type === "slot" && type === "bench") {
+      const benchPlayerId = key;                          // ← ADD this line
       const nextLineup = { ...lineup };
-      nextLineup[selected.key] = null;
+      nextLineup[selected.key] = benchPlayerId;           // ← CHANGE null to benchPlayerId
       const nextLocks = { ...lockedSlots };
       delete nextLocks[selected.key];
       setLineup(nextLineup);
@@ -539,7 +542,6 @@ export default function FieldHockeyPositionPlannerV2() {
       setSelected(null);
       return;
     }
-
     // Selected item is a bench player, clicked item is a slot -> move bench player into that slot
     if (selected.type === "bench" && type === "slot") {
       const benchPlayerId = selected.key;
@@ -694,15 +696,15 @@ export default function FieldHockeyPositionPlannerV2() {
   };
 
   const handleSlotTouchStart = (slotCode, e) => {
-    startDrag(slotCode, e);
+    if (!startDrag(slotCode, e)) return;
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = setTimeout(() => {
       if (!dragStart?.moved && lineup[slotCode]) {
         const touch = e.touches?.[0];
         if (touch) {
           openSlotMenu(slotCode, {
-            preventDefault: () => {},
-            stopPropagation: () => {},
+            preventDefault: () => { },
+            stopPropagation: () => { },
             clientX: touch.clientX,
             clientY: touch.clientY,
           });
@@ -823,7 +825,7 @@ export default function FieldHockeyPositionPlannerV2() {
     background: t.page,
     color: t.text,
     fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
-    padding: 16,
+    padding: isMobile ? 12 : 14,
     boxSizing: "border-box",
   };
 
@@ -987,7 +989,7 @@ export default function FieldHockeyPositionPlannerV2() {
 
   return (
     <div style={shell}>
-      <div style={{ maxWidth: 1360, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ maxWidth: 1400, margin: "0 auto", display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={card}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
             <div>
@@ -1062,6 +1064,20 @@ export default function FieldHockeyPositionPlannerV2() {
                 <div style={{ marginTop: 12, color: t.muted, fontSize: 13 }}>
                   {playerCountLabel()}
                 </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 14 }}>
+                  {!players.length && <div style={{ color: t.muted, fontSize: 13 }}>No players added yet.</div>}
+                  {players.map((player) => (
+                    <div
+                      key={`manual-list-${player.id}`}
+                      style={{ background: t.panelAlt, border: `1px solid ${t.border}`, borderRadius: 12, padding: "8px 10px", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}
+                    >
+                      <span style={{ fontWeight: 700 }}>{player.name}</span>
+                      <span style={{ color: player.unavailable ? t.muted : "#166534", border: `1px solid ${player.unavailable ? t.border : "#166534"}`, borderRadius: 999, padding: "3px 8px", fontSize: 12, fontWeight: 800 }}>
+                        {player.unavailable ? "Unavailable" : "Available"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div style={card} onClick={(e) => e.stopPropagation()}>
@@ -1085,40 +1101,50 @@ export default function FieldHockeyPositionPlannerV2() {
               </div>
 
               <div style={card} onClick={(e) => e.stopPropagation()}>
-                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Spreadsheet Workflow</div>
-                
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-                  <button style={secondaryBtn} onClick={() => exportToExcel(players, "blank")}>Download Blank Template</button>
-                  <button style={secondaryBtn} onClick={() => exportToExcel(players, "current")}>Download Current Squad</button>
-                  <button style={primaryBtn} onClick={() => fileInputRef.current.click()}>Import Template</button>
-                  <input type="file" accept=".xlsx,.csv" style={{ display: "none" }} ref={fileInputRef} onChange={handleFileUpload} />
-                </div>
+                <button
+                  style={{ ...secondaryBtn, width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: spreadsheetOpen ? 12 : 0 }}
+                  onClick={() => setSpreadsheetOpen((prev) => !prev)}
+                >
+                  <span>Spreadsheet Workflow</span>
+                  <span>{spreadsheetOpen ? "▼" : "▶"}</span>
+                </button>
 
-                <div style={{ marginBottom: 16, background: t.panelAlt, padding: 12, borderRadius: 12, border: `1px solid ${t.border}` }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Spreadsheet Legend (0-3 values)</div>
-                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                    {PREF_LEVELS.map(l => (
-                      <div key={l.value} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ fontWeight: 800 }}>{l.value}</span> = {l.short}
+                {spreadsheetOpen && (
+                  <>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                      <button style={secondaryBtn} onClick={() => exportToExcel(players, "blank")}>Download Blank Template</button>
+                      <button style={secondaryBtn} onClick={() => exportToExcel(players, "current")}>Download Current Squad</button>
+                      <button style={primaryBtn} onClick={() => fileInputRef.current.click()}>Import Template</button>
+                      <input type="file" accept=".xlsx,.csv" style={{ display: "none" }} ref={fileInputRef} onChange={handleFileUpload} />
+                    </div>
+
+                    <div style={{ marginBottom: 16, background: t.panelAlt, padding: 12, borderRadius: 12, border: `1px solid ${t.border}` }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Spreadsheet Legend (0-3 values)</div>
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                        {PREF_LEVELS.map(l => (
+                          <div key={l.value} style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{ fontWeight: 800 }}>{l.value}</span> = {l.short}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    </div>
 
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Or Paste Table</div>
-                <div style={{ color: t.muted, fontSize: 13, marginBottom: 8 }}>
-                  Copy directly from Excel/Sheets and paste here. Include the header row.
-                </div>
-                <textarea
-                  style={{ ...input, minHeight: 120, resize: "vertical" }}
-                  value={bulkImport}
-                  onChange={(e) => setBulkImport(e.target.value)}
-                  placeholder={`Player\tGK\tFB-L\tFB-R\tHB-L\nSam\t0\t3\t2\t1`}
-                />
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                  <button style={primaryBtn} onClick={handlePaste}>Apply Pasted Data</button>
-                  <button style={secondaryBtn} onClick={() => setBulkImport("")}>Clear</button>
-                </div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Or Paste Table</div>
+                    <div style={{ color: t.muted, fontSize: 13, marginBottom: 8 }}>
+                      Copy directly from Excel/Sheets and paste here. Include the header row.
+                    </div>
+                    <textarea
+                      style={{ ...input, minHeight: 120, resize: "vertical" }}
+                      value={bulkImport}
+                      onChange={(e) => setBulkImport(e.target.value)}
+                      placeholder={`Player\tGK\tFB-L\tFB-R\tHB-L\nSam\t0\t3\t2\t1`}
+                    />
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      <button style={primaryBtn} onClick={handlePaste}>Apply Pasted Data</button>
+                      <button style={secondaryBtn} onClick={() => setBulkImport("")}>Clear</button>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1274,14 +1300,14 @@ export default function FieldHockeyPositionPlannerV2() {
               {activePlayer && (
                 <div style={card}>
                   <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Position roles</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(auto-fit, minmax(0, 1fr))" : "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
                     {SLOT_META.map((slot) => {
                       const face = prefMeta(prefScore(activePlayer.id, slot.code));
                       return (
                         <div key={slot.code} style={{ background: t.panelAlt, border: `1px solid ${t.border}`, borderRadius: 14, padding: 12 }}>
                           <div style={{ fontWeight: 700 }}>{slot.name}</div>
                           <div style={{ fontSize: 12, color: t.muted, marginTop: 4 }}>{slot.code} • {slot.group}</div>
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: isMobile ? "wrap" : "nowrap", marginTop: 10 }}>
                             {PREF_LEVELS.map((opt) => (
                               <button
                                 key={opt.value}
@@ -1418,7 +1444,7 @@ export default function FieldHockeyPositionPlannerV2() {
                 <div ref={pitchWrapRef} style={{ position: "relative", background: t.fieldBg, border: `1px solid ${t.border}`, borderRadius: 14, padding: 8 }}>
                   <svg
                     viewBox="0 0 100 170"
-                    style={{ width: "100%", display: "block", touchAction: "none", aspectRatio: "1 / 1.7", maxWidth: 520, margin: "0 auto" }}
+                    style={{ width: "100%", display: "block", touchAction: isMobile ? "pan-y" : "none", aspectRatio: "1 / 1.7", maxWidth: 520, margin: "0 auto" }}
                     onMouseMove={onPitchMove}
                     onMouseUp={endDrag}
                     onMouseLeave={endDrag}
@@ -1506,7 +1532,7 @@ export default function FieldHockeyPositionPlannerV2() {
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                 <div style={card}>
                   <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Starting 11</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 560, overflowY: "auto" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingRight: 6 }}>
                     {fSlots.map((spot) => {
                       const pid = lineup[spot.internalCode];
                       const player = byId(pid);
@@ -1546,7 +1572,7 @@ export default function FieldHockeyPositionPlannerV2() {
                       </button>
                     )}
                   </div>
-                  <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 8, paddingRight: 6 }}>
                     {!availableBenchPlayers.length && <div style={{ color: t.muted }}>No substitutes.</div>}
                     {availableBenchPlayers.map((player) => {
                       const strongPositions = SLOT_META
@@ -1585,7 +1611,7 @@ export default function FieldHockeyPositionPlannerV2() {
                       </button>
                     )}
                   </div>
-                  <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 8, paddingRight: 6 }}>
                     {!unavailableBenchPlayers.length && <div style={{ color: t.muted }}>No unavailable players.</div>}
                     {unavailableBenchPlayers.map((player) => {
                       const strongPositions = SLOT_META
@@ -1631,10 +1657,7 @@ export default function FieldHockeyPositionPlannerV2() {
                 <textarea value={summaryText} onChange={(e) => setSummaryText(e.target.value)} style={{ ...input, minHeight: 260, fontFamily: "monospace", fontSize: 12 }} />
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <button style={primaryBtn} onClick={copySummary}>Copy summary</button>
-                  <button style={secondaryBtn} onClick={loadSummary}>Load from summary</button>
                   <button style={secondaryBtn} onClick={copyCode}>Copy code</button>
-                  <button style={secondaryBtn} onClick={copyLink}>Copy link</button>
-                  <button style={secondaryBtn} onClick={copyReadOnlyLink}>Copy view-only link</button>
                   <button style={secondaryBtn} onClick={() => copyShortLink(false)}>Copy short link</button>
                   <button style={secondaryBtn} onClick={() => copyShortLink(true)}>Copy short view-only link</button>
                   {!!shareNotice && <span style={{ color: t.muted, fontSize: 13, fontWeight: 700 }}>{shareNotice}</span>}

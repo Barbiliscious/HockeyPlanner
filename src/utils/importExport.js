@@ -134,21 +134,30 @@ export function exportToExcel(players, type) {
       aoa.push(row);
     });
   } else {
-    aoa.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-    aoa.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
-    aoa.push(["", "", "", "", "", "", "", "", "", "", "", ""]);
+    aoa.push(Array(headers.length).fill(""));
+    aoa.push(Array(headers.length).fill(""));
+    aoa.push(Array(headers.length).fill(""));
   }
 
-  aoa.push([]);
-  aoa.push(["Legend:"]);
-  aoa.push(["3 = Experienced"]);
-  aoa.push(["2 = Capable"]);
-  aoa.push(["1 = Limited"]);
-  aoa.push(["0 = Uncomfortable"]);
+  const guide = [
+    ["Legend"],
+    ["Value", "Meaning"],
+    [3, "Experienced"],
+    [2, "Capable"],
+    [1, "Limited"],
+    [0, "Uncomfortable"],
+    [],
+    [],
+    ["Position Code Guide"],
+    ["Code", "Position"],
+    ...SLOT_META.map((slot) => [slot.code, slot.name]),
+  ];
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const guideWs = XLSX.utils.aoa_to_sheet(guide);
   XLSX.utils.book_append_sheet(wb, ws, "Squad");
+  XLSX.utils.book_append_sheet(wb, guideWs, "Guide");
   const filename = type === "current" ? "Current_Squad_Template.xlsx" : "Blank_Template.xlsx";
   XLSX.writeFile(wb, filename);
 }
