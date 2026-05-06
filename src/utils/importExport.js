@@ -33,11 +33,15 @@ export function rebuildBulkImportText(players, preferences) {
 }
 
 const parseLevel = (val) => {
+  // Handle numeric 0 explicitly BEFORE nl() is called,
+  // because nl() treats 0 as falsy and converts it to ""
+  if (val === 0 || val === "0") return 0;
+
   const prefText = nl(val);
   if (prefText === "experienced" || prefText === "3") return 3;
   if (prefText === "capable" || prefText === "2") return 2;
   if (prefText === "limited" || prefText === "1") return 1;
-  if (prefText === "uncomfortable" || prefText === "0") return 0;
+  if (prefText === "uncomfortable") return 0;
   return null;
 }
 
