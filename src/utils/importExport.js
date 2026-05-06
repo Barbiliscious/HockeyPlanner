@@ -25,7 +25,7 @@ export function rebuildBulkImportText(players, preferences) {
     player.name,
     ...SLOT_META.map((slot) => {
       const value = preferences?.[pk(player.id, slot.code)];
-      return typeof value === "number" ? labelByValue.get(value) || "" : "";
+      return typeof value === "number" ? String(value) : "";
     }),
   ]);
 
@@ -121,15 +121,17 @@ export function parseSpreadsheetData(aoa, players) {
   return { playersToAdd, prefUpdates, stats };
 }
 
-export function exportToExcel(players, type) {
+export function exportToExcel(players, type, preferences = {}) {
   const headers = ["Player", ...SLOT_META.map(s => s.displayCode)];
   const aoa = [headers];
 
   if (type === "current") {
     players.forEach((player) => {
       const row = [player.name];
-      SLOT_META.forEach(() => {
-        row.push(1);
+      SLOT_META.forEach((slot) => {
+        const key = pk(player.id, slot.code);
+        const val = preferences[key];
+        row.push(typeof val === "number" ? val : "");
       });
       aoa.push(row);
     });

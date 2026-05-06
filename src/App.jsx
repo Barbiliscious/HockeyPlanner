@@ -1118,7 +1118,7 @@ export default function FieldHockeyPositionPlannerV2() {
                   <>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
                       <button style={secondaryBtn} onClick={() => exportToExcel(players, "blank")}>Download Blank Template</button>
-                      <button style={secondaryBtn} onClick={() => exportToExcel(players, "current")}>Download Current Squad</button>
+                      <button style={secondaryBtn} onClick={() => exportToExcel(players, "current", preferences)}>Download Current Squad</button>
                       <button style={primaryBtn} onClick={() => fileInputRef.current.click()}>Import Template</button>
                       <input type="file" accept=".xlsx,.csv" style={{ display: "none" }} ref={fileInputRef} onChange={handleFileUpload} />
                     </div>
