@@ -67,6 +67,7 @@ export default function FieldHockeyPositionPlannerV2() {
   const longPressTimerRef = useRef(null);
   const pitchWrapRef = useRef(null);
   const suppressSlotClickRef = useRef(false);
+  const hasDragged = useRef(false);
 
   const t = THEMES[themeMode];
   const fSlots = FORMATIONS[formation];
@@ -320,6 +321,7 @@ export default function FieldHockeyPositionPlannerV2() {
     e.preventDefault();
     e.stopPropagation();
     const point = e.touches ? e.touches[0] : e;
+    hasDragged.current = false;
     suppressSlotClickRef.current = false;
     setDragStart({ x: point.clientX, y: point.clientY, slotCode, moved: false });
     setDragging(slotCode);
@@ -333,7 +335,10 @@ export default function FieldHockeyPositionPlannerV2() {
     const dx = Math.abs(point.clientX - (dragStart?.x ?? point.clientX));
     const dy = Math.abs(point.clientY - (dragStart?.y ?? point.clientY));
     const moved = dx > 5 || dy > 5;
-    if (moved) suppressSlotClickRef.current = true;
+    if (moved) {
+      hasDragged.current = true;
+      suppressSlotClickRef.current = true;
+    }
     if (moved && longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     if (dragStart && moved !== dragStart.moved) setDragStart((prev) => ({ ...prev, moved }));
     if (!moved) return;
@@ -1485,7 +1490,11 @@ export default function FieldHockeyPositionPlannerV2() {
                             fill={selectedSlot ? t.accent : "#a855f7"}
                             stroke={slotRingColor}
                             strokeWidth={selectedSlot ? 1.7 : 1.1}
-                            onClick={() => handleSelect("slot", spot.internalCode, "pitch")}
+                            onMouseUp={() => {
+                              if (!hasDragged.current) {
+                                handleSelect("slot", spot.internalCode, "pitch");
+                              }
+                            }}
                             onMouseDown={(e) => startDrag(spot.internalCode, e)}
                             onTouchStart={(e) => handleSlotTouchStart(spot.internalCode, e)}
                             onContextMenu={(e) => openSlotMenu(spot.internalCode, e)}
